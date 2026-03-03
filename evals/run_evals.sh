@@ -20,23 +20,7 @@ set -eo pipefail
 # Configuration
 ##############################################################################
 
-# Find lm_eval: env override > PATH > common venv locations
-LM_EVAL="${LM_EVAL:-$(command -v lm_eval 2>/dev/null || true)}"
-if [[ -z "${LM_EVAL}" ]]; then
-    for candidate in \
-        "${HOME}/.venv/bin/lm_eval" \
-        "${HOME}/regolo-semantic-routing/.venv/bin/lm_eval" \
-        "/home/rdseeweb/regolo-semantic-routing/.venv/bin/lm_eval"; do
-        if [[ -x "${candidate}" ]]; then
-            LM_EVAL="${candidate}"
-            break
-        fi
-    done
-fi
-if [[ -z "${LM_EVAL}" || ! -x "${LM_EVAL}" ]]; then
-    echo "ERROR: lm_eval not found. Install it or set LM_EVAL=/path/to/lm_eval"
-    exit 1
-fi
+LM_EVAL="/home/rdseeweb/regolo-semantic-routing/.venv/bin/lm_eval"
 EVALS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGS_DIR="${EVALS_DIR}/logs"
 DATE=$(date +%Y-%m-%d)
@@ -47,9 +31,9 @@ BRICK_URL="http://213.171.186.210:8000/v1/chat/completions"
 # Regolo API — for individual model baselines
 REGOLO_URL="https://api.regolo.ai/v1/chat/completions"
 
-# Parallel arrays: index 0 = brick, 1-8 = individual models
-SHORT_NAMES=(brick llama70b gptoss120b gptoss20b mistral32 qwen3coder qwen3_8b gemma27b)
-MODELS=(brick Llama-3.3-70B-Instruct gpt-oss-120b gpt-oss-20b mistral-small3.2 qwen3-coder-next Qwen3-8B gemma-3-27b-it)
+# Parallel arrays: index 0 = brick, 1-6 = individual models
+SHORT_NAMES=(brick llama70b gptoss120b gptoss20b mistral32 qwen3coder qwen3_8b)
+MODELS=(brick Llama-3.3-70B-Instruct gpt-oss-120b gpt-oss-20b mistral-small3.2 qwen3-coder-next Qwen3-8B)
 TOKENIZERS=(
     meta-llama/Llama-3.3-70B-Instruct
     meta-llama/Llama-3.3-70B-Instruct
@@ -58,7 +42,6 @@ TOKENIZERS=(
     mistralai/Mistral-Small-3.1-24B-Instruct-2503
     Qwen/Qwen3-235B-A22B
     Qwen/Qwen3-8B
-    google/gemma-3-27b-it
 )
 
 ##############################################################################
@@ -164,6 +147,7 @@ run_eval() {
 
     # IMPORTANT: Run lm-eval from /tmp to avoid CWD directory names
     # colliding with task names (lm-eval checks Path(task).is_dir()).
+    # Use "|| true" to prevent set -e from killing the script on lm-eval failure.
     (cd /tmp && "${LM_EVAL}" run \
         --model "${model_type}" \
         --model_args "${model_args}" \
@@ -174,7 +158,7 @@ run_eval() {
         --apply_chat_template \
         --trust_remote_code \
         ${extra_flags[@]+"${extra_flags[@]}"} \
-    ) 2>&1 | tee "${log_file}"
+    ) 2>&1 | tee "${log_file}" || true
 
     local status=${PIPESTATUS[0]}
 

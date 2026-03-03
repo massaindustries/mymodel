@@ -53,6 +53,17 @@ func (s *Server) forwardToBackend(w http.ResponseWriter, clientReq *http.Request
 		upstreamReq.Header.Set(key, value)
 	}
 
+	// Log auth header status for debugging credential propagation
+	if auth := upstreamReq.Header.Get("Authorization"); auth != "" {
+		prefix := auth
+		if len(prefix) > 20 {
+			prefix = prefix[:20] + "..."
+		}
+		logging.Infof("Forwarding with auth header: %s", prefix)
+	} else {
+		logging.Warnf("Forwarding WITHOUT auth header — upstream will likely reject")
+	}
+
 	// Copy safe headers from original client request
 	for _, safeHeader := range []string{"Accept", "Accept-Encoding", "User-Agent"} {
 		if v := clientReq.Header.Get(safeHeader); v != "" {

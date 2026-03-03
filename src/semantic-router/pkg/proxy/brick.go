@@ -176,6 +176,15 @@ func (s *Server) handleBrickRequest(w http.ResponseWriter, r *http.Request) {
 	// Always use buildRegoloForwardResult to get correct schema and auth header.
 	regoloResult := s.buildRegoloForwardResultWithKey(result.ForwardBody, cfg, req.Stream, apiKey)
 	regoloResult.ForwardHeaders = mergeMaps(regoloResult.ForwardHeaders, result.ForwardHeaders)
+
+	// Log brick auth injection (the pipeline's authz warnings above are expected —
+	// brick injects the credential here, after the pipeline runs)
+	keyPrefix := apiKey
+	if len(keyPrefix) > 8 {
+		keyPrefix = keyPrefix[:8] + "..."
+	}
+	logging.Infof("Brick: injected auth for upstream forward (key: %s)", keyPrefix)
+
 	s.forwardToBackend(w, r, regoloResult)
 }
 

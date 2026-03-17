@@ -1,10 +1,20 @@
 <div align="center">
 
+```
+ ##          ##   ##        ##        ##      ##    ######    ########
+  ##        ##    ##        ##        ###    ###   ##    ##   ##    ##
+   ##      ##     ##        ##        ####  ####   ##         ##    ##
+    ##    ##      ##        ##        ## #### ##    ####     ########
+     ##  ##       ##        ##        ##  ##  ##       ##    ##  ##
+      ####        ##        ##        ##      ##   ##    ##   ##   ##
+       ##         ########  ########  ##      ##    ######    ##    ##
+```
+
 # MyModel
 
 **Create your own AI model in 5 minutes.**
 
-Define a YAML config, run one command, get an OpenAI-compatible API that routes text, images, and audio to the right backend automatically.
+One YAML file. Any provider. Text, images, audio — all through a single endpoint.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8.svg)](https://go.dev)
@@ -17,296 +27,32 @@ Define a YAML config, run one command, get an OpenAI-compatible API that routes 
 
 ## What is MyModel?
 
-MyModel lets you **wrap any combination of LLM providers into a single API endpoint**. You pick the models, MyModel handles the routing.
+MyModel wraps **any LLM provider** into a single OpenAI-compatible API. You write a config, MyModel handles everything else: routing, multimodal detection, model selection.
 
-- **Text** goes through a semantic routing pipeline that picks the best model
-- **Images** get sent to a vision model automatically
-- **Audio** gets transcribed and then routed as text
-- **Everything** speaks standard OpenAI format — any SDK works out of the box
+Works with **OpenAI, Anthropic, Groq, Together, Fireworks, Regolo, Ollama, local vLLM** — anything that speaks OpenAI format.
 
 ```
-Your app  ──>  MyModel (port 8000)  ──>  gpt-oss-120b (text)
-                                    ──>  qwen3-vl-32b (images)
-                                    ──>  faster-whisper (audio)
-                                    ──>  deepseek-ocr (documents)
+                                         ┌─ gpt-4o (coding questions)
+Your app ──> MyModel ──> brick ──────────┼─ llama-3.3-70b (general chat)
+             :8000       (auto-routes)   ├─ gpt-4o-vision (images)
+                                         └─ whisper-large-v3 (audio)
 ```
+
+- **Text** routes to the best model based on content (keywords, domains, complexity)
+- **Images** go to a vision model automatically
+- **Audio** gets transcribed then routed as text
+- **Any OpenAI SDK** works — no client changes needed
 
 ---
 
 ## Quick Start
 
-### 1. Write your config
-
-Create a `config.yaml`:
+### 1. Write a config
 
 ```yaml
 model:
-  name: my-first-model
-  description: My custom AI model
+  name: my-assistant
 
-providers:
-  regoloai:
-    type: openai-compatible
-    base_url: https://api.regolo.ai/v1
-    api_key: ${REGOLO_API_KEY}
-
-text_routes:
-  - name: default
-    provider: regoloai
-    model: gpt-oss-120b
-    priority: 0
-    operator: OR
-
-modality_routes:
-  audio:
-    provider: regoloai
-    model: faster-whisper-large-v3
-  image:
-    provider: regoloai
-    model: deepseek-ocr
-  multimodal:
-    provider: regoloai
-    model: qwen3-vl-32b
-
-plugins:
-  semantic_cache:
-    enabled: false
-  jailbreak_guard:
-    enabled: false
-
-server_port: 8000
-```
-
-### 2. Build the Docker image (first time only)
-
-```bash
-docker build -t mymodel:latest .
-```
-
-### 3. Start your model
-
-```bash
-export REGOLO_API_KEY="your-api-key"
-
-docker run -d \
-  --name mymodel \
-  -p 8000:8000 \
-  -v $(pwd)/config.yaml:/app/config/config.yaml:ro \
-  -e REGOLO_API_KEY \
-  mymodel:latest --config /app/config/config.yaml --port 8000
-```
-
-### 4. Use it
-
-```bash
-# Text
-curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $REGOLO_API_KEY" \
-  -d '{
-    "model": "brick",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-
-# Image + Text
-curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $REGOLO_API_KEY" \
-  -d '{
-    "model": "brick",
-    "messages": [{
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "What is in this image?"},
-        {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
-      ]
-    }]
-  }'
-```
-
-Works with any OpenAI SDK:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="your-key")
-
-response = client.chat.completions.create(
-    model="brick",
-    messages=[{"role": "user", "content": "Explain quantum computing in simple terms"}]
-)
-print(response.choices[0].message.content)
-```
-
----
-
-## How it works
-
-### The `brick` virtual model
-
-When you send a request with `model: "brick"`, MyModel inspects the content and routes automatically:
-
-| What you send | What happens | Backend used |
-|---|---|---|
-| Text only | Routes through semantic pipeline | Your default text model |
-| Image + text | Forwards to vision model with image intact | `modality_routes.multimodal` |
-| Image only | Runs OCR first, then routes the extracted text | `modality_routes.image` → pipeline |
-| Audio | Transcribes via STT, then routes the text | `modality_routes.audio` → pipeline |
-| Audio + image | OCR and STT run in parallel, then routes combined text | Both → pipeline |
-
-You don't need to detect modality or pick models. Just send your request to `brick` and MyModel figures it out.
-
-### Direct model access
-
-If you already know which model you want, bypass routing with the `x-selected-model` header:
-
-```bash
-curl http://localhost:8000/v1/chat/completions \
-  -H "x-selected-model: qwen3-vl-32b" \
-  -H "Authorization: Bearer $REGOLO_API_KEY" \
-  -d '{"model": "brick", "messages": [{"role": "user", "content": "Hi"}]}'
-```
-
-### Semantic text routing
-
-For text requests, MyModel runs a classification pipeline that can route to different models based on the content. Configure multiple text routes with keywords and domains:
-
-```yaml
-text_routes:
-  - name: coding
-    provider: regoloai
-    model: qwen3-coder-next
-    priority: 80
-    operator: OR
-    signals:
-      keywords: [code, python, javascript, debug, algorithm, function]
-      domains: [computer_science]
-
-  - name: math
-    provider: regoloai
-    model: gpt-oss-120b
-    priority: 70
-    operator: OR
-    signals:
-      keywords: [calculate, equation, proof, theorem, integral]
-      domains: [mathematics]
-
-  - name: default
-    provider: regoloai
-    model: mistral-small3.2
-    priority: 0
-    operator: OR
-```
-
-Higher priority routes are evaluated first. The first match wins. If nothing matches, the default route handles it.
-
----
-
-## Configuration reference
-
-### `model`
-
-```yaml
-model:
-  name: my-model          # Name shown in /v1/models (for your reference)
-  description: My model   # Description (optional)
-```
-
-### `providers`
-
-Define your LLM backends. Works with any OpenAI-compatible API.
-
-```yaml
-providers:
-  my-provider:
-    type: openai-compatible    # or "anthropic"
-    base_url: https://api.example.com/v1
-    api_key: ${MY_API_KEY}     # Use env vars for secrets
-```
-
-**Supported providers**: Any OpenAI-compatible API (Regolo, OpenAI, Together, Groq, Fireworks, local vLLM, Ollama, etc.) and Anthropic.
-
-### `text_routes`
-
-```yaml
-text_routes:
-  - name: route-name        # Unique name
-    provider: my-provider   # Which provider to use
-    model: model-name       # Model ID on that provider
-    priority: 50            # Higher = evaluated first (0-100)
-    operator: OR            # OR = any signal matches, AND = all must match
-    signals:
-      keywords: [word1, word2]           # Keyword matching (case-insensitive)
-      domains: [computer_science, math]  # Domain classification
-```
-
-**Available domains**: `computer_science`, `mathematics`, `physics`, `biology`, `chemistry`, `business`, `economics`, `philosophy`, `law`, `history`, `psychology`, `health`, `engineering`, `other`
-
-### `modality_routes`
-
-```yaml
-modality_routes:
-  audio:
-    provider: my-provider
-    model: whisper-large-v3         # Any Whisper-compatible STT model
-  image:
-    provider: my-provider
-    model: my-ocr-model             # For OCR on image-only requests
-  multimodal:
-    provider: my-provider
-    model: my-vision-model          # For image+text requests (must support image_url)
-```
-
-All three are optional. If you don't need audio, just leave `audio` out.
-
-### `plugins`
-
-```yaml
-plugins:
-  semantic_cache:
-    enabled: true         # Cache similar requests (saves cost)
-  jailbreak_guard:
-    enabled: true         # Block jailbreak attempts
-  pii_detection:
-    enabled: false        # Detect personally identifiable information
-```
-
-### `server_port`
-
-```yaml
-server_port: 8000   # Port the API listens on
-```
-
----
-
-## Using with the TypeScript CLI
-
-The `mymodel` CLI provides an interactive setup wizard and server management:
-
-```bash
-cd src/mymodel-cli-ts
-npm install && npm run build
-
-# Interactive setup
-npx mymodel init
-
-# Start the server
-npx mymodel serve
-
-# Check status
-npx mymodel status
-
-# Test routing
-npx mymodel route "Write a Python function to sort a list"
-```
-
----
-
-## Using with any provider
-
-### OpenAI
-
-```yaml
 providers:
   openai:
     type: openai-compatible
@@ -324,6 +70,71 @@ modality_routes:
   multimodal:
     provider: openai
     model: gpt-4o
+
+server_port: 8000
+```
+
+That's it. This creates a model called "my-assistant" that routes text to `gpt-4o-mini` and images to `gpt-4o`.
+
+### 2. Build & run
+
+```bash
+docker build -t mymodel:latest .
+
+export OPENAI_API_KEY="sk-..."
+
+docker run -d --name mymodel -p 8000:8000 \
+  -v $(pwd)/config.yaml:/app/config/config.yaml:ro \
+  -e OPENAI_API_KEY \
+  mymodel:latest --config /app/config/config.yaml --port 8000
+```
+
+### 3. Call it
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model": "brick", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+Or with the Python SDK:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="your-key")
+r = client.chat.completions.create(
+    model="brick",
+    messages=[{"role": "user", "content": "Explain quantum computing simply"}]
+)
+print(r.choices[0].message.content)
+```
+
+---
+
+## Providers
+
+MyModel works with any OpenAI-compatible API. Here are some examples:
+
+### OpenAI
+
+```yaml
+providers:
+  openai:
+    type: openai-compatible
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+text_routes:
+  - name: default
+    provider: openai
+    model: gpt-4o-mini
+    priority: 0
+    operator: OR
+modality_routes:
+  multimodal:
+    provider: openai
+    model: gpt-4o
 ```
 
 ### Anthropic
@@ -334,7 +145,6 @@ providers:
     type: anthropic
     base_url: https://api.anthropic.com
     api_key: ${ANTHROPIC_API_KEY}
-
 text_routes:
   - name: default
     provider: anthropic
@@ -343,7 +153,81 @@ text_routes:
     operator: OR
 ```
 
-### Local (Ollama)
+### Groq (fast inference)
+
+```yaml
+providers:
+  groq:
+    type: openai-compatible
+    base_url: https://api.groq.com/openai/v1
+    api_key: ${GROQ_API_KEY}
+text_routes:
+  - name: default
+    provider: groq
+    model: llama-3.3-70b-versatile
+    priority: 0
+    operator: OR
+```
+
+### Together AI
+
+```yaml
+providers:
+  together:
+    type: openai-compatible
+    base_url: https://api.together.xyz/v1
+    api_key: ${TOGETHER_API_KEY}
+text_routes:
+  - name: default
+    provider: together
+    model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+    priority: 0
+    operator: OR
+```
+
+### Fireworks AI
+
+```yaml
+providers:
+  fireworks:
+    type: openai-compatible
+    base_url: https://api.fireworks.ai/inference/v1
+    api_key: ${FIREWORKS_API_KEY}
+text_routes:
+  - name: default
+    provider: fireworks
+    model: accounts/fireworks/models/llama-v3p3-70b-instruct
+    priority: 0
+    operator: OR
+```
+
+### Regolo AI
+
+```yaml
+providers:
+  regoloai:
+    type: openai-compatible
+    base_url: https://api.regolo.ai/v1
+    api_key: ${REGOLO_API_KEY}
+text_routes:
+  - name: default
+    provider: regoloai
+    model: gpt-oss-120b
+    priority: 0
+    operator: OR
+modality_routes:
+  audio:
+    provider: regoloai
+    model: faster-whisper-large-v3
+  image:
+    provider: regoloai
+    model: deepseek-ocr
+  multimodal:
+    provider: regoloai
+    model: qwen3-vl-32b
+```
+
+### Ollama (local)
 
 ```yaml
 providers:
@@ -351,7 +235,6 @@ providers:
     type: openai-compatible
     base_url: http://localhost:11434/v1
     api_key: ollama
-
 text_routes:
   - name: default
     provider: local
@@ -360,7 +243,9 @@ text_routes:
     operator: OR
 ```
 
-### Multi-provider routing
+### Mix multiple providers
+
+The real power: route different types of requests to different providers.
 
 ```yaml
 providers:
@@ -372,6 +257,10 @@ providers:
     type: openai-compatible
     base_url: https://api.openai.com/v1
     api_key: ${OPENAI_API_KEY}
+  vision:
+    type: openai-compatible
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
 
 text_routes:
   - name: coding
@@ -380,7 +269,7 @@ text_routes:
     priority: 80
     operator: OR
     signals:
-      keywords: [code, debug, function, class, algorithm]
+      keywords: [code, debug, function, class, algorithm, python, javascript]
       domains: [computer_science]
 
   - name: default
@@ -388,6 +277,151 @@ text_routes:
     model: llama-3.3-70b-versatile
     priority: 0
     operator: OR
+
+modality_routes:
+  multimodal:
+    provider: vision
+    model: gpt-4o
+```
+
+This sends coding questions to GPT-4o, everything else to Llama on Groq (fast and cheap), and images to GPT-4o vision.
+
+---
+
+## Brick: the multimodal virtual model
+
+Every request goes to `model: "brick"`. Brick detects what you're sending and routes it:
+
+| What you send | What MyModel does | Where it goes |
+|---|---|---|
+| **Text** | Routes through semantic pipeline | Best matching text model |
+| **Image + text** | Forwards with image intact | Vision model (`modality_routes.multimodal`) |
+| **Image only** | Runs OCR, then routes extracted text | OCR model → text pipeline |
+| **Audio** | Transcribes, then routes text | STT model → text pipeline |
+| **Audio + image** | OCR + STT in parallel, routes combined text | Both → text pipeline |
+
+You never need to pick a model. Brick picks for you.
+
+### Direct model access
+
+Already know which model you want? Bypass routing:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "x-selected-model: gpt-4o" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{"model": "brick", "messages": [{"role": "user", "content": "Hi"}]}'
+```
+
+---
+
+## Semantic text routing
+
+Route different questions to different models based on content:
+
+```yaml
+text_routes:
+  - name: coding
+    provider: smart
+    model: gpt-4o
+    priority: 80
+    operator: OR
+    signals:
+      keywords: [code, python, javascript, debug, algorithm, function, class]
+      domains: [computer_science]
+
+  - name: math
+    provider: smart
+    model: gpt-4o
+    priority: 70
+    operator: OR
+    signals:
+      keywords: [calculate, equation, proof, theorem, integral, derivative]
+      domains: [mathematics]
+
+  - name: default
+    provider: fast
+    model: llama-3.3-70b-versatile
+    priority: 0
+    operator: OR
+```
+
+- **Priority**: higher = evaluated first (0-100)
+- **Operator**: `OR` = any signal matches, `AND` = all must match
+- **Keywords**: case-insensitive word matching
+- **Domains**: ML-based classification into academic categories
+
+**Available domains**: `computer_science`, `mathematics`, `physics`, `biology`, `chemistry`, `business`, `economics`, `philosophy`, `law`, `history`, `psychology`, `health`, `engineering`, `other`
+
+---
+
+## Configuration reference
+
+### `model`
+
+```yaml
+model:
+  name: my-model          # Your model's name
+  description: My model   # Optional description
+```
+
+### `providers`
+
+```yaml
+providers:
+  provider-name:
+    type: openai-compatible    # or "anthropic"
+    base_url: https://api.example.com/v1
+    api_key: ${MY_API_KEY}     # Env vars for secrets
+```
+
+### `text_routes`
+
+```yaml
+text_routes:
+  - name: route-name
+    provider: provider-name
+    model: model-id
+    priority: 50              # 0-100, higher = first
+    operator: OR              # OR or AND
+    signals:                  # Optional — omit for default route
+      keywords: [word1, word2]
+      domains: [domain1]
+```
+
+### `modality_routes`
+
+```yaml
+modality_routes:
+  audio:                      # Speech-to-text (Whisper-compatible)
+    provider: my-provider
+    model: whisper-large-v3
+  image:                      # OCR for image-only requests
+    provider: my-provider
+    model: my-ocr-model
+  multimodal:                 # Vision for image+text
+    provider: my-provider
+    model: my-vision-model
+```
+
+All optional. Add only what you need.
+
+### `plugins`
+
+```yaml
+plugins:
+  semantic_cache:
+    enabled: true             # Cache similar requests
+  jailbreak_guard:
+    enabled: true             # Block jailbreak attempts
+  pii_detection:
+    enabled: false            # Detect personal information
+```
+
+### `server_port`
+
+```yaml
+server_port: 8000
 ```
 
 ---
@@ -399,83 +433,82 @@ text_routes:
 | `/v1/chat/completions` | POST | Chat completions (main endpoint) |
 | `/v1/models` | GET | List available models |
 | `/health` | GET | Health check |
-| `/v1/routing/test` | POST | Test routing decision (debug) |
+| `/v1/routing/test` | POST | Test a routing decision |
+
+Standard OpenAI format. Works with any SDK or tool that supports OpenAI.
+
+---
+
+## TypeScript CLI
+
+Interactive setup and server management:
+
+```bash
+cd src/mymodel-cli-ts
+npm install && npm run build
+
+npx mymodel init          # Guided config wizard
+npx mymodel serve         # Start the server
+npx mymodel status        # Check health
+npx mymodel route "..."   # Test routing offline
+npx mymodel config show   # Display current config
+```
 
 ---
 
 ## Architecture
 
 ```
-                          config.yaml
-                              |
-                    +---------v----------+
-                    |  Config Translator  |  (TypeScript)
-                    |  translator.ts      |
-                    +---------+----------+
-                              |
-                     translated config
-                              |
-                    +---------v----------+
-                    |    Go HTTP Proxy    |  (single binary, port 8000)
-                    |                    |
-                    |  /v1/chat/completions
-                    |       |            |
-                    |  model = "brick"?  |
-                    |    /         \     |
-                    |  yes          no   |
-                    |   |           |    |
-                    | Brick       Pipeline|
-                    | Handler    (semantic|
-                    |   |        routing) |
-                    |   |           |    |
-                    +---+-----------+----+
-                        |           |
-              +---------+--+  +-----+--------+
-              | Vision/OCR |  | Text models   |
-              | STT models |  | (default,     |
-              | (Regolo,   |  |  coding, etc) |
-              |  OpenAI..) |  |               |
-              +------------+  +---------------+
+ config.yaml (you write this)
+      |
+      v
+ Config Translator (TypeScript)
+      |
+      v
+ Go HTTP Proxy (single binary, port 8000)
+      |
+      +-- model = "brick"?
+      |     |
+      |    YES ── Brick Handler
+      |     |       |
+      |     |      detect modality
+      |     |       |
+      |     |      image+text ──> vision model (direct forward)
+      |     |      audio ──────> STT ──> text pipeline
+      |     |      text ───────> text pipeline
+      |     |
+      |    NO ── direct forward to specified model
+      |
+      v
+ Text Routing Pipeline
+      |
+      +-- keyword matching
+      +-- domain classification
+      +-- priority evaluation
+      |
+      v
+ Selected Backend (OpenAI, Anthropic, Groq, Ollama, ...)
 ```
 
 ---
 
 ## Building from source
 
-### Prerequisites
-
-- Docker (for building the image)
-- Node.js 18+ (for the CLI)
-
-### Build the Docker image
-
 ```bash
+# Docker image (includes Rust ML libs + Go binary)
 docker build -t mymodel:latest .
+
+# CLI only
+cd src/mymodel-cli-ts && npm install && npm run build
 ```
 
-This is a multi-stage build:
-1. **Rust stage**: Compiles ML embedding libraries (candle, linfa, NLP)
-2. **Go stage**: Compiles the HTTP proxy + routing engine
-3. **Runtime stage**: Minimal Debian image with the binary
-
-### Build the CLI
-
-```bash
-cd src/mymodel-cli-ts
-npm install
-npm run build
-```
+The Docker build is multi-stage: Rust (ML embeddings) → Go (proxy + router) → Debian slim runtime. Takes ~10 min first time, cached after that.
 
 ---
 
 ## Attribution
 
-Built on [vLLM Semantic Router](https://github.com/vllm-project/semantic-router) (Apache 2.0). This project adds:
-
-- **Go HTTP proxy** replacing Envoy for simpler deployment
-- **Brick virtual model** for unified multimodal routing
-- **TypeScript CLI** for interactive configuration and server management
-- **Config translator** that converts simple YAML to the full routing config
+Built on [vLLM Semantic Router](https://github.com/vllm-project/semantic-router) (Apache 2.0). This project adds the Go HTTP proxy, Brick multimodal gateway, TypeScript CLI, and config translator.
 
 ## License
 

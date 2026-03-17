@@ -25,7 +25,7 @@ One YAML file. Any provider. Text, images, audio — all through a single endpoi
 
 MyModel wraps **any LLM provider** into a single OpenAI-compatible API. You write a config, MyModel handles everything else: routing, multimodal detection, model selection.
 
-Works with **OpenAI, Anthropic, Groq, Together, Fireworks, Regolo, Ollama, local vLLM** — anything that speaks OpenAI format.
+Works with **OpenAI, Anthropic, Google Gemini, xAI Grok, Groq, Together, Fireworks, Regolo, Ollama, local vLLM** — anything that speaks OpenAI format.
 
 ```
                                            ┌─ claude-opus-4-6 (complex reasoning)
@@ -178,6 +178,46 @@ text_routes:
     model: claude-opus-4-6
     priority: 0
     operator: OR
+```
+
+### Google Gemini
+
+```yaml
+providers:
+  gemini:
+    type: openai-compatible
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key: ${GEMINI_API_KEY}
+text_routes:
+  - name: default
+    provider: gemini
+    model: gemini-2.5-pro
+    priority: 0
+    operator: OR
+modality_routes:
+  multimodal:
+    provider: gemini
+    model: gemini-2.5-pro
+```
+
+### xAI Grok
+
+```yaml
+providers:
+  xai:
+    type: openai-compatible
+    base_url: https://api.x.ai/v1
+    api_key: ${XAI_API_KEY}
+text_routes:
+  - name: default
+    provider: xai
+    model: grok-3
+    priority: 0
+    operator: OR
+modality_routes:
+  multimodal:
+    provider: xai
+    model: grok-3
 ```
 
 ### Groq (fast inference)
@@ -384,68 +424,154 @@ text_routes:
 
 ## Configuration reference
 
+Full list of every parameter in `config.yaml`.
+
 ### `model`
+
+Your model's identity. This is what you see in logs and in the `/v1/models` endpoint.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `model.name` | string | yes | `"MyModel"` | The name of your model. Can be anything — it's just a label. |
+| `model.description` | string | no | `""` | Optional description for your reference. |
 
 ```yaml
 model:
-  name: my-model          # Your model's name
-  description: My model   # Optional description
+  name: zeus
+  description: "Multi-provider AI assistant with vision and audio"
 ```
 
 ### `providers`
 
+The LLM backends your model connects to. You can define as many as you want and reference them in routes by name.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `providers.<name>` | object | yes (at least one) | A named provider. The name is your choice (e.g., `openai`, `fast`, `my-local-server`). |
+| `providers.<name>.type` | string | yes | `"openai-compatible"` for any OpenAI-format API (OpenAI, Groq, Together, Gemini, Grok, Regolo, Ollama, vLLM, etc.). `"anthropic"` for Anthropic's native API format. |
+| `providers.<name>.base_url` | string | yes | The API base URL. Must end with `/v1` for OpenAI-compatible providers. Examples: `https://api.openai.com/v1`, `https://api.x.ai/v1`, `http://localhost:11434/v1`. |
+| `providers.<name>.api_key` | string | yes | API key. Use `${ENV_VAR_NAME}` syntax to reference environment variables instead of hardcoding secrets. |
+
 ```yaml
 providers:
-  provider-name:
-    type: openai-compatible    # or "anthropic"
-    base_url: https://api.example.com/v1
-    api_key: ${MY_API_KEY}     # Env vars for secrets
+  anthropic:
+    type: anthropic
+    base_url: https://api.anthropic.com
+    api_key: ${ANTHROPIC_API_KEY}
+  openai:
+    type: openai-compatible
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+  local:
+    type: openai-compatible
+    base_url: http://localhost:11434/v1
+    api_key: ollama              # Ollama doesn't need a real key
 ```
 
 ### `text_routes`
 
+Rules that determine which model handles each text request. Routes are evaluated by priority (highest first). The first matching route wins. A route with no `signals` acts as the default fallback.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `text_routes[].name` | string | yes | — | Unique name for the route (e.g., `"coding"`, `"math"`, `"default"`). Used in logs and routing decisions. |
+| `text_routes[].provider` | string | yes | — | Name of the provider to use (must match a key in `providers`). |
+| `text_routes[].model` | string | yes | — | Model ID as the provider knows it (e.g., `"gpt-5"`, `"claude-opus-4-6"`, `"llama3.1"`). |
+| `text_routes[].priority` | integer | no | `50` | Evaluation order: 0–100, higher = evaluated first. Use 0 for the default/fallback route. |
+| `text_routes[].operator` | string | no | `"OR"` | How to combine signals: `"OR"` = any signal match triggers the route, `"AND"` = all signals must match. |
+| `text_routes[].signals` | object | no | — | Matching criteria. Omit entirely for the default route (matches everything). |
+| `text_routes[].signals.keywords` | string[] | no | `[]` | List of keywords to match in the user's message. Case-insensitive. Example: `[code, python, debug]`. |
+| `text_routes[].signals.domains` | string[] | no | `[]` | Academic domains for ML-based classification. The router uses an embedded BERT model to classify the message into these categories. |
+
+**Available domains**: `computer_science`, `mathematics`, `physics`, `biology`, `chemistry`, `business`, `economics`, `philosophy`, `law`, `history`, `psychology`, `health`, `engineering`, `other`
+
 ```yaml
 text_routes:
-  - name: route-name
-    provider: provider-name
-    model: model-id
-    priority: 50              # 0-100, higher = first
-    operator: OR              # OR or AND
-    signals:                  # Optional — omit for default route
-      keywords: [word1, word2]
-      domains: [domain1]
+  # High priority: coding questions → GPT-5 Codex
+  - name: coding
+    provider: openai
+    model: gpt-5-codex
+    priority: 80
+    operator: OR
+    signals:
+      keywords: [code, python, javascript, debug, function, algorithm, class, refactor]
+      domains: [computer_science]
+
+  # Medium priority: math → Claude Opus
+  - name: math
+    provider: anthropic
+    model: claude-opus-4-6
+    priority: 70
+    operator: AND                # Both keyword AND domain must match
+    signals:
+      keywords: [calculate, equation, proof, theorem]
+      domains: [mathematics]
+
+  # Fallback: everything else → fast cheap model
+  - name: default
+    provider: groq
+    model: llama-3.3-70b-versatile
+    priority: 0
+    operator: OR
+    # No signals = catches everything that didn't match above
 ```
 
 ### `modality_routes`
 
+Models for non-text content. When `brick` receives an image or audio, these routes determine which model handles it. All three are optional — add only the modalities you need.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `modality_routes.multimodal` | object | no | Handles **image + text** requests. The model must support `image_url` content parts (vision models). The original image is forwarded intact. |
+| `modality_routes.multimodal.provider` | string | yes | Provider name from `providers`. |
+| `modality_routes.multimodal.model` | string | yes | Vision model ID (e.g., `gpt-5`, `gemini-2.5-pro`, `qwen3.5-122b`). |
+| `modality_routes.image` | object | no | Handles **image-only** requests (no text). Used for OCR: extracts text from the image, then routes the extracted text through `text_routes`. |
+| `modality_routes.image.provider` | string | yes | Provider name from `providers`. |
+| `modality_routes.image.model` | string | yes | OCR/vision model ID. |
+| `modality_routes.audio` | object | no | Handles **audio** content. Transcribes audio via a Whisper-compatible STT endpoint, then routes the transcribed text through `text_routes`. |
+| `modality_routes.audio.provider` | string | yes | Provider name from `providers`. |
+| `modality_routes.audio.model` | string | yes | STT model ID (e.g., `faster-whisper-large-v3`, `whisper-1`). |
+
 ```yaml
 modality_routes:
-  audio:                      # Speech-to-text (Whisper-compatible)
-    provider: my-provider
-    model: whisper-large-v3
-  image:                      # OCR for image-only requests
-    provider: my-provider
-    model: my-ocr-model
-  multimodal:                 # Vision for image+text
-    provider: my-provider
-    model: my-vision-model
+  multimodal:                   # "What's in this image?" + image → vision model
+    provider: openai
+    model: gpt-5
+  image:                        # Image only (no text) → OCR → text pipeline
+    provider: regoloai
+    model: qwen3.5-122b
+  audio:                        # Audio → transcription → text pipeline
+    provider: regoloai
+    model: faster-whisper-large-v3
 ```
 
-All optional. Add only what you need.
-
 ### `plugins`
+
+Optional features that run on every request before routing.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `plugins.semantic_cache.enabled` | boolean | `false` | When `true`, caches responses for semantically similar requests. Reduces latency and cost for repeated questions. Uses an embedded BERT model to compute similarity. |
+| `plugins.jailbreak_guard.enabled` | boolean | `false` | When `true`, runs a jailbreak detection classifier on every request. Blocks requests flagged as jailbreak attempts with a `content_filter` response. |
+| `plugins.pii_detection.enabled` | boolean | `false` | When `true`, scans requests for personally identifiable information (names, emails, phone numbers, etc.). |
 
 ```yaml
 plugins:
   semantic_cache:
-    enabled: true             # Cache similar requests
+    enabled: true
   jailbreak_guard:
-    enabled: true             # Block jailbreak attempts
+    enabled: true
   pii_detection:
-    enabled: false            # Detect personal information
+    enabled: false
 ```
 
 ### `server_port`
+
+The port the API listens on inside the Docker container.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `server_port` | integer | `8000` | HTTP port for `/v1/chat/completions` and all other endpoints. Must match the `-p` flag in `docker run`. |
 
 ```yaml
 server_port: 8000

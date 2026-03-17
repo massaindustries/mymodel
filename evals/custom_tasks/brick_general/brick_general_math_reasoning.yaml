@@ -1,4 +1,0 @@
-include: _brick_general_default.yaml
-task: brick_general_math_reasoning
-task_alias: " - math_reasoning"
-process_docs: !function utils.process_math_reasoning

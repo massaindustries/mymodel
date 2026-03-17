@@ -1,4 +1,0 @@
-include: _brick_general_default.yaml
-task: brick_general_general
-task_alias: " - general"
-process_docs: !function utils.process_general

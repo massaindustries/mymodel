@@ -1,4 +1,0 @@
-include: _brick_general_default.yaml
-task: brick_general_humanities
-task_alias: " - humanities"
-process_docs: !function utils.process_humanities

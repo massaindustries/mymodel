@@ -3,7 +3,11 @@
  * Ported from Python core.py
  */
 
+import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
+import {translateToNativeYaml, buildRouterConfigPatch} from './config/translator.js'
+import {resolveSecrets} from './config/loader.js'
 import {
   containerStatus,
   containerExec,
@@ -53,6 +57,38 @@ export async function startVllmSr(
 ): Promise<void> {
   const envVars: Record<string, string> = {...(options.envVars ?? {})}
   const enableObs = options.enableObservability !== false
+
+  // Resolve ${VAR} references in api_keys before translation so the native
+  // config gets the actual key values, not placeholder strings.
+  const resolvedConfig = resolveSecrets(config)
+
+  // Inject provider API keys as env vars so the Go brick handler can resolve
+  // them without needing the MyModel-format providers section in the native config.
+  // The Go side checks REGOLO_API_KEY specifically for the regoloai provider.
+  const providerEnvKeyMap: Record<string, string> = {
+    regoloai: 'REGOLO_API_KEY',
+    openai: 'OPENAI_API_KEY',
+    anthropic: 'ANTHROPIC_API_KEY',
+    google: 'GOOGLE_API_KEY',
+  }
+  for (const [provName, prov] of Object.entries(resolvedConfig.providers)) {
+    if (prov.api_key && !prov.api_key.startsWith('${')) {
+      const envKey = providerEnvKeyMap[provName]
+        ?? `${provName.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`
+      if (!envVars[envKey]) {
+        envVars[envKey] = prov.api_key
+      }
+    }
+  }
+
+  // Translate MyModelConfig → native vLLM SR UserConfig format.
+  // The container's config_generator.py validates the mounted YAML against
+  // the native UserConfig Pydantic model (version, listeners, decisions, providers.models).
+  const nativeYaml = translateToNativeYaml(resolvedConfig)
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mymodel-'))
+  const nativeConfigPath = path.join(tmpDir, 'config.yaml')
+  fs.writeFileSync(nativeConfigPath, nativeYaml)
+
   const configDir = path.dirname(path.resolve(configFile))
 
   // Cleanup existing container
@@ -84,10 +120,10 @@ export async function startVllmSr(
     {host: proxyPort, container: proxyPort},
   ]
 
-  // Start main container
+  // Start main container (mount the translated native config, not the original)
   printOk('Starting MyModel router...')
   const result = startMainContainer({
-    configFile,
+    configFile: nativeConfigPath,
     envVars,
     image: options.image,
     networkName: enableObs ? DOCKER_NETWORK : undefined,
@@ -102,6 +138,8 @@ export async function startVllmSr(
 
   // Health check loop
   printOk('Waiting for health check...')
+  console.log(DIM('  (This may take several minutes depending on your hardware — the router downloads'))
+  console.log(DIM('   ~8 ML models on first startup. Be patient!)\n'))
   const startTime = Date.now()
   const timeoutMs = HEALTH_CHECK_TIMEOUT * 1000
   let healthy = false
@@ -140,6 +178,10 @@ export async function startVllmSr(
     return
   }
 
+  // The mymodel container starts the Go HTTP proxy directly (no Envoy).
+  // The translated config already includes brick, semantic_cache, and
+  // prompt_guard settings, so no post-startup patching is needed.
+
   // Print endpoints
   console.log()
   printOk(`Server ready on ${ACCENT(`http://localhost:${proxyPort}`)}`)
@@ -158,7 +200,18 @@ export async function startVllmSr(
 }
 
 /**
- * Stop all vLLM SR services.
+ * Pause all vLLM SR services (docker stop, containers are kept).
+ * Use resumeVllmSr() or startVllmSr() to bring them back.
+ */
+export function pauseVllmSr(): void {
+  stopContainer(DOCKER_CONTAINER_NAME)
+  for (const name of OBSERVABILITY_CONTAINERS) {
+    stopContainer(name)
+  }
+}
+
+/**
+ * Stop and remove all vLLM SR services + network (full cleanup).
  */
 export function stopVllmSr(): void {
   stopContainer(DOCKER_CONTAINER_NAME)

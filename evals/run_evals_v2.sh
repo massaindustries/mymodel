@@ -67,7 +67,7 @@ fi
 
 LM_EVAL="/home/rdseeweb/regolo-semantic-routing/.venv/bin/lm_eval"
 EVALS_DIR="${SCRIPT_DIR}"
-STAGE_DIR="${EVALS_DIR}/stage4"
+STAGE_DIR="${EVALS_DIR}/stage5"
 LOGS_DIR="${STAGE_DIR}/logs"
 DATE=$(date +%Y-%m-%d)
 
@@ -135,7 +135,7 @@ get_system_instruction() {
             echo "Put your final numerical answer in \\boxed{}."
             ;;
         drop*)
-            echo "Give a short, direct answer."
+            echo "Answer the question with a short, direct response."
             ;;
         humaneval*|mbpp*)
             echo "Provide only the implementation code, no explanations or markdown."
@@ -199,10 +199,16 @@ run_eval() {
 
     # IMPORTANT: Run lm-eval from /tmp to avoid CWD directory names
     # colliding with task names (lm-eval checks Path(task).is_dir()).
-    (cd /tmp && "${LM_EVAL}" run \
+    # We invoke via python3 -c so we can import patch_parse_generations
+    # first, which monkey-patches parse_generations to handle reasoning
+    # model responses (content absent, only reasoning_content).
+    (cd /tmp && PYTHONPATH="${EVALS_DIR}:${PYTHONPATH:-}" \
+        python3 -c "import patch_parse_generations; from lm_eval.__main__ import cli_evaluate; cli_evaluate()" \
+        run \
         --model "${model_type}" \
         --model_args "${model_args}" \
         --tasks "${task}" \
+        --include_path "${EVALS_DIR}/custom_tasks" \
         --output_path "${out_dir}" \
         --log_samples \
         --batch_size 1 \
@@ -244,7 +250,7 @@ phase1() {
 
     echo ""
     echo "=== ARC-Challenge Chat (0-shot, full) ==="
-    run_eval "arc_challenge_chat" "arc_challenge" 100
+    run_eval "arc_challenge_chat_nopfx" "arc_challenge" 256
 
     echo ""
     echo "=== TruthfulQA Gen (6-shot built-in, full) ==="
@@ -275,7 +281,8 @@ phase2() {
     run_eval "drop" "drop" 2048 \
         --num_fewshot 3 \
         --limit 200 \
-        --fewshot_as_multiturn True
+        --fewshot_as_multiturn True \
+        --gen_kwargs '{"until":["\n\n"]}'
 
     echo ""
     echo "=== Minerva Math (4-shot, limit=100/subtask) ==="

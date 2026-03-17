@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# run_vision_evals.sh — Vision Evals: lmms-eval benchmarks for Brick vs qwen3-vl-32b
+# run_vision_evals.sh — Vision Evals: lmms-eval benchmarks for Brick vs qwen3.5-122b
 #
 # Usage:
 #   ./run_vision_evals.sh                         # Run all benchmarks
 #   ./run_vision_evals.sh --dry-run               # Dry run with --limit 2
 #   ./run_vision_evals.sh --only brick            # Run only for brick
-#   ./run_vision_evals.sh --only qwen3vl32b       # Run only for qwen3-vl-32b
+#   ./run_vision_evals.sh --only qwen35122b      # Run only for qwen3.5-122b
 #
 # Prerequisites:
 #   - lmms-eval installed in .venv-vision
@@ -43,12 +43,12 @@ fi
 # Brick gateway (running on dedicated eval server) — no /chat/completions suffix
 BRICK_URL="http://213.171.186.210:8000/v1"
 
-# Regolo API — for qwen3-vl-32b baseline — no /chat/completions suffix
+# Regolo API — for qwen3.5-122b baseline — no /chat/completions suffix
 REGOLO_URL="https://api.regolo.ai/v1"
 
-# Parallel arrays: index 0 = brick, 1 = qwen3-vl-32b
-SHORT_NAMES=(brick qwen3vl32b)
-MODELS=(brick qwen3-vl-32b)
+# Parallel arrays: index 0 = brick, 1 = qwen3.5-122b
+SHORT_NAMES=(brick qwen35122b)
+MODELS=(brick qwen3.5-122b)
 
 ##############################################################################
 # CLI arguments
@@ -180,7 +180,7 @@ run_vision_eval() {
 run_all() {
     echo ""
     echo "################################################################"
-    echo "# Vision Evals — Brick vs qwen3-vl-32b"
+    echo "# Vision Evals — Brick vs qwen3.5-122b"
     echo "################################################################"
 
     # 1. MME — Perception generale (14 subtask), ~2374 samples

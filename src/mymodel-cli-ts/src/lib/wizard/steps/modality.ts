@@ -10,6 +10,12 @@ export interface ModalityRoutesData {
   [modality: string]: {provider: string; model: string}
 }
 
+const MODALITY_LABELS: Record<string, string> = {
+  audio: 'audio (speech-to-text models)',
+  image: 'image (OCR + vision models)',
+  multimodal: 'multimodal (models that accept image + text)',
+}
+
 const MODALITIES = ['audio', 'image', 'multimodal'] as const
 
 export async function promptModalities(
@@ -27,7 +33,8 @@ export async function promptModalities(
   }
 
   for (const modality of MODALITIES) {
-    const enable = await askConfirm(`Enable ${modality} routing?`)
+    const label = MODALITY_LABELS[modality] ?? modality
+    const enable = await askConfirm(`Enable ${label} routing?`)
     if (!enable) continue
 
     const provider = await askChoice(

@@ -31,6 +31,9 @@
       },
       "config": {
         "description": "View and validate your configuration"
+      },
+      "serve": {
+        "description": "Manage the MyModel server (start / stop / rm)"
       }
     }
   },

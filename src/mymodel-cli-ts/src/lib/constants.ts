@@ -4,9 +4,9 @@
  */
 
 // Docker image configuration
-export const DOCKER_IMAGE_DEFAULT = 'ghcr.io/vllm-project/semantic-router/vllm-sr:latest'
-export const DOCKER_IMAGE_DEV = 'vllm-sr:dev'
-export const DOCKER_IMAGE_RELEASE = 'vllm-sr:0.1.0'
+export const DOCKER_IMAGE_DEFAULT = 'mymodel:latest'
+export const DOCKER_IMAGE_DEV = 'mymodel:dev'
+export const DOCKER_IMAGE_RELEASE = 'mymodel:0.1.0'
 export const DOCKER_CONTAINER_NAME = 'vllm-sr-container'
 export const DOCKER_NETWORK = 'vllm-sr-network'
 

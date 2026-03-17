@@ -124,7 +124,7 @@ brick:
   enabled: true
 
   # Vision model for image+text forwarding and image-only fallback
-  vision_model: "qwen3-vl-32b"
+  vision_model: "qwen3.5-122b"
   vision_endpoint: "https://api.regolo.ai/v1"
 
   # Dedicated OCR model for image-only inputs

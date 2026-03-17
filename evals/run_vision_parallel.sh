@@ -46,12 +46,12 @@ fi
 # Brick gateway — no /chat/completions suffix (OpenAI client adds it)
 BRICK_URL="http://213.171.186.210:8000/v1"
 
-# Regolo API — for qwen3-vl-32b baseline
+# Regolo API — for qwen3.5-122b baseline
 REGOLO_URL="https://api.regolo.ai/v1"
 
-# Parallel arrays: index 0 = brick, 1 = qwen3-vl-32b
-SHORT_NAMES=(brick qwen3vl32b)
-MODELS=(brick qwen3-vl-32b)
+# Parallel arrays: index 0 = brick, 1 = qwen3.5-122b
+SHORT_NAMES=(brick qwen35122b)
+MODELS=(brick qwen3.5-122b)
 
 # All vision benchmarks (task, output_subdir, max_tokens)
 ALL_BENCHMARKS="mme mmmu_val mathvista_testmini docvqa_val chartqa realworldqa"

@@ -13,6 +13,7 @@ import type {MyModelConfig} from '../config/schema.js'
 import {ACCENT} from '../ui/theme.js'
 
 import {showWelcome} from './steps/welcome.js'
+import {promptInitMode} from './steps/init-mode.js'
 import {promptModelIdentity} from './steps/model-identity.js'
 import {promptProviders, type ProviderData} from './steps/providers.js'
 import {promptTextRoutes, type TextRouteData} from './steps/text-routes.js'
@@ -41,6 +42,20 @@ export async function runInitWizard(outputPath: string): Promise<boolean> {
   try {
     // Step 1: Welcome (calls intro() internally)
     showWelcome()
+
+    // Choose setup mode: new, pre-made, or import
+    const initResult = await promptInitMode(outputPath)
+
+    // For pre-made and import modes, save directly and exit
+    if (initResult.mode !== 'new' && initResult.config) {
+      const {config, envVars = {}} = initResult
+      saveConfig(config, outputPath)
+      writeEnvExample(envVars)
+      printNextSteps(outputPath, envVars)
+      return true
+    }
+
+    // Full interactive wizard flow (mode === 'new')
 
     // Step 2: Model identity
     const {modelName, modelDesc} = await promptModelIdentity(TOTAL_STEPS)
@@ -73,30 +88,8 @@ export async function runInitWizard(outputPath: string): Promise<boolean> {
     // Build and save config
     const config = buildConfig(data)
     saveConfig(config, outputPath)
-
-    // Write .env.example if env vars were collected
-    if (Object.keys(envVars).length > 0) {
-      const envContent = Object.keys(envVars)
-        .map(k => `${k}=`)
-        .join('\n') + '\n'
-      fs.writeFileSync('.env.example', envContent)
-    }
-
-    // Build "next steps" note
-    const nextSteps = [
-      `Configuration saved to ${ACCENT(outputPath)}`,
-    ]
-    if (Object.keys(envVars).length > 0) {
-      nextSteps.push(`Created .env.example with required environment variables`)
-    }
-    nextSteps.push('')
-    nextSteps.push('Next:')
-    nextSteps.push(`  ${ACCENT('mymodel serve')}          Start the server`)
-    nextSteps.push(`  ${ACCENT('mymodel config show')}    Review your config`)
-    nextSteps.push(`  ${ACCENT('mymodel add provider')}   Add more providers`)
-
-    p.note(nextSteps.join('\n'), 'Done!')
-    p.outro('Happy routing!')
+    writeEnvExample(envVars)
+    printNextSteps(outputPath, envVars)
 
     return true
   } catch (error) {
@@ -106,6 +99,38 @@ export async function runInitWizard(outputPath: string): Promise<boolean> {
     }
     throw error
   }
+}
+
+/**
+ * Write .env.example if there are env vars to document.
+ */
+function writeEnvExample(envVars: Record<string, string>): void {
+  if (Object.keys(envVars).length > 0) {
+    const envContent = Object.keys(envVars)
+      .map(k => `${k}=`)
+      .join('\n') + '\n'
+    fs.writeFileSync('.env.example', envContent)
+  }
+}
+
+/**
+ * Show "next steps" note and outro.
+ */
+function printNextSteps(outputPath: string, envVars: Record<string, string>): void {
+  const nextSteps = [
+    `Configuration saved to ${ACCENT(outputPath)}`,
+  ]
+  if (Object.keys(envVars).length > 0) {
+    nextSteps.push(`Created .env.example with required environment variables`)
+  }
+  nextSteps.push('')
+  nextSteps.push('Next:')
+  nextSteps.push(`  ${ACCENT('mymodel serve')}          Start the server`)
+  nextSteps.push(`  ${ACCENT('mymodel config show')}    Review your config`)
+  nextSteps.push(`  ${ACCENT('mymodel add provider')}   Add more providers`)
+
+  p.note(nextSteps.join('\n'), 'Done!')
+  p.outro('Happy routing!')
 }
 
 /**

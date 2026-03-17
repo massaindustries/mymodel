@@ -56,7 +56,7 @@ type BrickConfig struct {
 	STTEndpoint   string `yaml:"stt_endpoint,omitempty"`   // e.g., "https://api.regolo.ai/v1/audio/transcriptions"
 	OCRModel      string `yaml:"ocr_model,omitempty"`      // e.g., "deepseek-ocr"
 	OCREndpoint   string `yaml:"ocr_endpoint,omitempty"`   // e.g., "https://api.regolo.ai/v1/chat/completions"
-	VisionModel   string `yaml:"vision_model,omitempty"`   // e.g., "qwen3-vl-32b"
+	VisionModel   string `yaml:"vision_model,omitempty"`   // e.g., "qwen3.5-122b"
 	VisionEndpoint string `yaml:"vision_endpoint,omitempty"` // e.g., "https://api.regolo.ai/v1/chat/completions"
 	OCRMinTextLen int    `yaml:"ocr_min_text_length,omitempty"`
 }

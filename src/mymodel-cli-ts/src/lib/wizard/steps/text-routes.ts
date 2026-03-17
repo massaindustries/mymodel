@@ -33,6 +33,19 @@ export async function promptTextRoutes(
 ): Promise<TextRoutesResult> {
   printStep(4, totalSteps, 'Text Routes')
 
+  p.log.message(
+    [
+      `Text routes let you send different requests to different models`,
+      `based on ${ACCENT('keywords')} and ${ACCENT('domains')} in the prompt.`,
+      '',
+      DIM('Example: route coding questions to DeepSeek, math to GPT-4o,'),
+      DIM('and everything else to a default model.'),
+      '',
+      DIM('Each route has a priority (0-100). Higher priority routes are'),
+      DIM('evaluated first. A default fallback route catches the rest.'),
+    ].join('\n'),
+  )
+
   const providerNames = Object.keys(providers)
   const textRoutes: TextRouteData[] = []
 

@@ -12,7 +12,7 @@ func TestBrickConfigValidate(t *testing.T) {
 		STTEndpoint:    "https://api.regolo.ai/v1/audio/transcriptions",
 		OCRModel:       "deepseek-ocr",
 		OCREndpoint:    "https://api.regolo.ai/v1/chat/completions",
-		VisionModel:    "qwen3-vl-32b",
+		VisionModel:    "qwen3.5-122b",
 		VisionEndpoint: "https://api.regolo.ai/v1/chat/completions",
 	}
 

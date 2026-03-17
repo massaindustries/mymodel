@@ -11,6 +11,8 @@ import {BaseCommand} from '../base-command.js'
 import {startVllmSr} from '../lib/core.js'
 import {ACCENT, ACCENT_BOLD, SUCCESS, DIM} from '../lib/ui/theme.js'
 import {ALGORITHM_TYPES} from '../lib/constants.js'
+import {resolveHfToken, saveHfToken} from '../lib/config/hf-token.js'
+import {askText} from '../lib/ui/prompts.js'
 import * as fs from 'node:fs'
 import * as yaml from 'js-yaml'
 import * as os from 'node:os'
@@ -53,17 +55,35 @@ export default class Serve extends BaseCommand {
       effectivePath = this.injectAlgorithm(flags.config, flags.algorithm)
     }
 
+    // ── HF token: not required but speeds up first-run model downloads ──
+    // The container downloads ~8 ML models on first start. Without a token
+    // HuggingFace rate-limits requests and the download takes 5–10 min.
+    // With a token it completes in under a minute. Press Enter to skip.
+    let hfToken = resolveHfToken()
+    if (!hfToken) {
+      const entered = await askText(
+        'HuggingFace token (speeds up first download — press Enter to skip):',
+        {placeholder: 'hf_...'},
+      )
+      if (entered) {
+        saveHfToken(entered)
+        hfToken = entered
+        p.log.success('HF token saved to ~/.mymodel/hf_token')
+      }
+    }
+
     // Collect env vars
     const envVars: Record<string, string> = {}
     const envKeys = [
       'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'REGOLO_API_KEY', 'GOOGLE_API_KEY',
-      'HF_ENDPOINT', 'HF_TOKEN', 'HF_HOME', 'HF_HUB_CACHE',
+      'HF_ENDPOINT', 'HF_HOME', 'HF_HUB_CACHE',
     ]
     for (const key of envKeys) {
       if (process.env[key]) {
         envVars[key] = process.env[key]!
       }
     }
+    if (hfToken) envVars.HF_TOKEN = hfToken
 
     // Print banner
     this.printBanner(config)

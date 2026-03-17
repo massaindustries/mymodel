@@ -3,6 +3,7 @@
  * Ported from Python docker_cli.py
  */
 
+import * as path from 'node:path'
 import {execa, execaSync} from 'execa'
 import {getContainerRuntime, getHostGatewayArgs} from './runtime.js'
 import {
@@ -203,7 +204,7 @@ export function startMainContainer(options: StartContainerOptions): {
   }
 
   // Volume mounts
-  const configAbs = require('node:path').resolve(options.configFile)
+  const configAbs = path.resolve(options.configFile)
   cmd.push('-v', `${configAbs}:/app/config.yaml:z`)
 
   // Environment variables

@@ -1,0 +1,8 @@
+model_key,display_name,benchmarks_tested,total_samples,total_input_tokens,total_output_tokens,total_tokens,total_cost_eur,cost_per_sample_avg,avg_score_pct,median_score_pct,cost_vs_brick_eur,cost_vs_brick_pct,note
+gptoss120b,GPT-OSS-120B,7,12920,11039961,1225086,12265047,€16.1853,€0.001253,35.57%,33.04%,€+6.58,+68.5%,Cost from stage2 full evaluation run
+brick,Brick (Router),9,13584,11420232,1288212,12708444,€9.6051,€0.000707,36.59%,34.37%,,,Full-scale cost extrapolated from Stage6 docker-logs routing distribution
+llama70b,Llama-3.3-70B-Instruct,4,4441,1357541,1048895,2406436,€3.6465,€0.000821,40.69%,47.70%,€-5.96,-62.0%,Cost from stage2 full evaluation run
+qwen3coder,Qwen3-Coder-Next,8,6794,1906593,1208255,3114848,€3.3698,€0.000496,39.51%,39.19%,€-6.24,-64.9%,Cost from stage2 full evaluation run
+mistral32,Mistral-Small-3.2,5,4958,1245199,1062270,2307469,€2.9596,€0.000597,45.43%,47.19%,€-6.65,-69.2%,Cost from stage2 full evaluation run
+gptoss20b,GPT-OSS-20B,7,12920,11018809,992484,12011293,€1.5187,€0.000118,26.11%,26.44%,€-8.09,-84.2%,Cost from stage2 full evaluation run
+qwen3_8b,Qwen3-8B,5,5313,1377195,144819,1522014,€0.1471,€0.000028,14.56%,0.00%,€-9.46,-98.5%,Cost from stage2 full evaluation run

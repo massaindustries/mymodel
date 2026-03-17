@@ -43,8 +43,8 @@ MODEL_NAME_MAP = {
     "qwen3coder": "qwen3coder",
     "qwen3-8b": "qwen3_8b",
     "qwen3_8b": "qwen3_8b",
-    "qwen3-vl-32b": "qwen3vl32b",
-    "qwen3vl32b": "qwen3vl32b",
+    "qwen3.5-122b": "qwen35122b",
+    "qwen35122b": "qwen35122b",
     "gemma-3-27b-it": "gemma27b",
 }
 

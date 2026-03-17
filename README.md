@@ -25,7 +25,7 @@ One YAML file. Any provider. Text, images, audio — all through a single endpoi
 
 MyModel wraps **any LLM provider** into a single OpenAI-compatible API. You write a config, MyModel handles everything else: routing, multimodal detection, model selection.
 
-Works with **OpenAI, Anthropic, Google Gemini, xAI Grok, Groq, Together, Fireworks, Regolo, Ollama, local vLLM** — anything that speaks OpenAI format.
+Works with **Regolo, OpenAI, Anthropic, Google Gemini, xAI Grok, Groq, Together, Fireworks, Ollama, local vLLM** — anything that speaks OpenAI format.
 
 ```
                                            ┌─ claude-opus-4-6 (complex reasoning)
@@ -51,7 +51,7 @@ With MyModel: **one base URL, one `model: "yourmodelname"`, one SDK**. Your app 
 
 ### 👁️ Any model becomes multimodal
 
-Most LLMs are text-only. With MyModel, you can send images and audio to a text model — Brick automatically runs OCR or speech-to-text first, then routes the extracted text through your pipeline. A model like `llama-3.3-70b` that has zero vision capability can now "see" documents and "hear" audio, because Brick preprocesses the input before it reaches the model.
+Most LLMs are text-only. With MyModel, you can send images and audio to a text model — your model automatically runs OCR or speech-to-text first, then routes the extracted text through your pipeline. A model like `llama-3.3-70b` that has zero vision capability can now "see" documents and "hear" audio, because MyModel preprocesses the input before it reaches the model.
 
 ### 💰 Smart routing cuts cost without cutting quality
 
@@ -156,7 +156,7 @@ docker run -d --name mymodel -p 8000:8000 \
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d '{"model": "brick", "messages": [{"role": "user", "content": "Hello!"}]}'
+  -d '{"model": "my-assistant", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
 Or with the Python SDK:
@@ -166,7 +166,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="your-key")
 r = client.chat.completions.create(
-    model="brick",
+    model="my-assistant",
     messages=[{"role": "user", "content": "Explain quantum computing simply"}]
 )
 print(r.choices[0].message.content)
@@ -177,6 +177,32 @@ print(r.choices[0].message.content)
 ## Providers
 
 MyModel works with any OpenAI-compatible API. Here are some examples:
+
+### Regolo AI
+
+```yaml
+providers:
+  regoloai:
+    type: openai-compatible
+    base_url: https://api.regolo.ai/v1
+    api_key: ${REGOLO_API_KEY}
+text_routes:
+  - name: default
+    provider: regoloai
+    model: gpt-oss-120b
+    priority: 0
+    operator: OR
+modality_routes:
+  audio:
+    provider: regoloai
+    model: faster-whisper-large-v3
+  image:
+    provider: regoloai
+    model: qwen3.5-122b
+  multimodal:
+    provider: regoloai
+    model: qwen3.5-122b
+```
 
 ### OpenAI
 
@@ -302,32 +328,6 @@ text_routes:
     operator: OR
 ```
 
-### Regolo AI
-
-```yaml
-providers:
-  regoloai:
-    type: openai-compatible
-    base_url: https://api.regolo.ai/v1
-    api_key: ${REGOLO_API_KEY}
-text_routes:
-  - name: default
-    provider: regoloai
-    model: gpt-oss-120b
-    priority: 0
-    operator: OR
-modality_routes:
-  audio:
-    provider: regoloai
-    model: faster-whisper-large-v3
-  image:
-    provider: regoloai
-    model: qwen3.5-122b
-  multimodal:
-    provider: regoloai
-    model: qwen3.5-122b
-```
-
 ### Ollama (local)
 
 ```yaml
@@ -389,9 +389,9 @@ This sends coding questions to GPT-5 Codex, everything else to Llama on Groq (fa
 
 ---
 
-## Brick: the multimodal virtual model
+## How your model handles multimodal input
 
-Every request goes to `model: "brick"`. Brick detects what you're sending and routes it:
+Every request goes to `model: "your-model-name"` — the name you chose in `model.name`. MyModel detects what you're sending and routes it automatically:
 
 | What you send | What MyModel does | Where it goes |
 |---|---|---|
@@ -401,7 +401,7 @@ Every request goes to `model: "brick"`. Brick detects what you're sending and ro
 | **Audio** | Transcribes, then routes text | STT model → text pipeline |
 | **Audio + image** | OCR + STT in parallel, routes combined text | Both → text pipeline |
 
-You never need to pick a model. Brick picks for you.
+You never need to detect modality or pick models. Your model does it for you.
 
 ### Direct model access
 
@@ -409,9 +409,9 @@ Already know which model you want? Bypass routing:
 
 ```bash
 curl http://localhost:8000/v1/chat/completions \
-  -H "x-selected-model: gpt-4o" \
+  -H "x-selected-model: gpt-5" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d '{"model": "brick", "messages": [{"role": "user", "content": "Hi"}]}'
+  -d '{"model": "my-assistant", "messages": [{"role": "user", "content": "Hi"}]}'
 ```
 
 ---
@@ -552,7 +552,7 @@ text_routes:
 
 ### `modality_routes`
 
-Models for non-text content. When `brick` receives an image or audio, these routes determine which model handles it. All three are optional — add only the modalities you need.
+Models for non-text content. When your model receives an image or audio, these routes determine which backend handles it. All three are optional — add only the modalities you need.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -654,9 +654,9 @@ npx mymodel config show   # Display current config
       v
  Go HTTP Proxy (single binary, port 8000)
       |
-      +-- model = "brick"?
+      +-- has image/audio?
       |     |
-      |    YES ── Brick Handler
+      |    YES ── Multimodal Handler
       |     |       |
       |     |      detect modality
       |     |       |
@@ -695,7 +695,7 @@ The Docker build is multi-stage: Rust (ML embeddings) → Go (proxy + router) �
 
 ## Attribution
 
-Built on [vLLM Semantic Router](https://github.com/vllm-project/semantic-router) (Apache 2.0). This project adds the Go HTTP proxy, Brick multimodal gateway, TypeScript CLI, and config translator.
+Built on [vLLM Semantic Router](https://github.com/vllm-project/semantic-router) (Apache 2.0). This project adds the Go HTTP proxy, multimodal gateway, TypeScript CLI, and config translator.
 
 ## License
 

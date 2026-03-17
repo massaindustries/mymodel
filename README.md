@@ -1,20 +1,10 @@
 <div align="center">
 
-![MyModel](https://readme-typing-svg.demolab.com?font=Fira+Code&size=24&pause=1000&color=FFFFFF&center=true&vCenter=true&width=435&lines=MYMODEL)
-
-```text
-      ___           ___           ___           ___           ___           ___           ___
-     /\__\         |\__\         /\__\         /\  \         /\  \         /\  \         /\__\
-    /::|  |        |:|  |       /::|  |       /::\  \       /::\  \       /::\  \       /:/  /
-   /:|:|  |        |:|  |      /:|:|  |      /:/\:\  \     /:/\:\  \     /:/\:\  \     /:/  /
-  /:/|:|__|__      |:|__|__   /:/|:|__|__   /:/  \:\  \   /:/  \:\__\   /::\~\:\  \   /:/  /
- /:/ |::::\__\     /::::\__\ /:/ |::::\__\ /:/__/ \:\__\ /:/__/ \:|__| /:/\:\ \:\__\ /:/__/
- \/__/~~/:/  /    /:/~~/~    \/__/~~/:/  / \:\  \ /:/  / \:\  \ /:/  / \:\~\:\ \/__/ \:\  \
-       /:/  /    /:/  /            /:/  /   \:\  /:/  /   \:\  /:/  /   \:\ \:\__\    \:\  \
-      /:/  /     \/__/            /:/  /     \:\/:/  /     \:\/:/  /     \:\ \/__/     \:\  \
-     /:/  /                      /:/  /       \::/  /       \::/__/       \:\__\        \:\__\
-     \/__/                       \/__/         \/__/         ~~            \/__/         \/__/
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo.svg">
+  <source media="(prefers-color-scheme: light)" srcset="logo.svg">
+  <img alt="MyModel" src="logo.svg" width="700">
+</picture>
 
 # MyModel
 
@@ -38,10 +28,10 @@ MyModel wraps **any LLM provider** into a single OpenAI-compatible API. You writ
 Works with **OpenAI, Anthropic, Groq, Together, Fireworks, Regolo, Ollama, local vLLM** — anything that speaks OpenAI format.
 
 ```
-                                         ┌─ gpt-4o (coding questions)
-Your app ──> MyModel ──> brick ──────────┼─ llama-3.3-70b (general chat)
-             :8000       (auto-routes)   ├─ gpt-4o-vision (images)
-                                         └─ whisper-large-v3 (audio)
+                                           ┌─ claude-sonnet-4 (complex reasoning)
+Your app ──> MyModel ──> brick ────────────┼─ gpt-4o-mini (everyday questions)
+             :8000       (auto-routes)     ├─ gpt-4o (images)
+                                           └─ faster-whisper (audio)
 ```
 
 - **Text** routes to the best model based on content (keywords, domains, complexity)
@@ -60,15 +50,40 @@ model:
   name: my-assistant
 
 providers:
+  anthropic:
+    type: anthropic
+    base_url: https://api.anthropic.com
+    api_key: ${ANTHROPIC_API_KEY}
   openai:
     type: openai-compatible
     base_url: https://api.openai.com/v1
     api_key: ${OPENAI_API_KEY}
+  regoloai:
+    type: openai-compatible
+    base_url: https://api.regolo.ai/v1
+    api_key: ${REGOLO_API_KEY}
 
 text_routes:
-  - name: default
+  - name: reasoning
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    priority: 80
+    operator: OR
+    signals:
+      keywords: [explain, analyze, compare, why, reason, think]
+
+  - name: coding
     provider: openai
-    model: gpt-4o-mini
+    model: gpt-4o
+    priority: 70
+    operator: OR
+    signals:
+      keywords: [code, python, javascript, debug, function, algorithm]
+      domains: [computer_science]
+
+  - name: default
+    provider: regoloai
+    model: gpt-oss-120b
     priority: 0
     operator: OR
 
@@ -76,11 +91,14 @@ modality_routes:
   multimodal:
     provider: openai
     model: gpt-4o
+  audio:
+    provider: regoloai
+    model: faster-whisper-large-v3
 
 server_port: 8000
 ```
 
-That's it. This creates a model called "my-assistant" that routes text to `gpt-4o-mini` and images to `gpt-4o`.
+Three providers, one endpoint. Complex reasoning goes to Claude, coding to GPT-4o, everything else to Regolo's open-source model. Images go to GPT-4o vision, audio gets transcribed by Whisper.
 
 ### 2. Build & run
 

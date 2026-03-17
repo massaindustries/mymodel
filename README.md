@@ -41,6 +41,40 @@ Your app ──> MyModel ──> yourmodel ────────┼─ gpt-5-
 
 ---
 
+## Solved Problems
+
+### Your app talks to one endpoint, not five
+
+Without MyModel, your code juggles multiple SDKs, API keys, and endpoints. A coding question goes to one API, a vision request to another, audio to a third. Every new model means new integration code.
+
+With MyModel: **one base URL, one `model: "brick"`, one SDK**. Your app never changes, even when you swap backends.
+
+### Any model becomes multimodal
+
+Most LLMs are text-only. With MyModel, you can send images and audio to a text model — Brick automatically runs OCR or speech-to-text first, then routes the extracted text through your pipeline. A model like `llama-3.3-70b` that has zero vision capability can now "see" documents and "hear" audio, because Brick preprocesses the input before it reaches the model.
+
+### Smart routing cuts cost without cutting quality
+
+Instead of sending everything to the most expensive model, MyModel routes based on content. Simple greetings go to a fast, cheap model. Complex reasoning goes to a premium one. Coding questions go to a code-specialized model. You define the rules in YAML — no code changes needed.
+
+### Built-in security
+
+Jailbreak detection runs on every request before it reaches any model. A local ML classifier (no external API calls) flags prompt injection attempts and blocks them with a `content_filter` response. PII detection can catch personal information before it leaves your infrastructure. All configurable, all optional.
+
+### Semantic caching saves money
+
+When two users ask nearly the same question, MyModel can return the cached response instead of calling the LLM again. The cache uses vector similarity (not exact match), so "What's the capital of France?" and "Tell me France's capital" hit the same cache entry.
+
+### Zero vendor lock-in
+
+Switch from OpenAI to Anthropic to Groq to a local Ollama server — just change the `provider` and `model` in your YAML. Your application code stays identical. You can even run multiple providers simultaneously and route between them.
+
+### Less code, more resilience
+
+No more try/catch chains across provider SDKs, no more if/else for modality detection, no more manual model selection logic. MyModel replaces hundreds of lines of routing code with a 20-line YAML file. If a provider goes down, change one line and restart — your app never knows the difference.
+
+---
+
 ## Quick Start
 
 ### 1. Write a config

@@ -1,6 +1,8 @@
 <div align="center">
 
-<pre>
+![MyModel](https://readme-typing-svg.demolab.com?font=Fira+Code&size=24&pause=1000&color=FFFFFF&center=true&vCenter=true&width=435&lines=MYMODEL)
+
+```text
       ___           ___           ___           ___           ___           ___           ___
      /\__\         |\__\         /\__\         /\  \         /\  \         /\  \         /\__\
     /::|  |        |:|  |       /::|  |       /::\  \       /::\  \       /::\  \       /:/  /
@@ -12,7 +14,7 @@
       /:/  /     \/__/            /:/  /     \:\/:/  /     \:\/:/  /     \:\ \/__/     \:\  \
      /:/  /                      /:/  /       \::/  /       \::/__/       \:\__\        \:\__\
      \/__/                       \/__/         \/__/         ~~            \/__/         \/__/
-</pre>
+```
 
 # MyModel
 

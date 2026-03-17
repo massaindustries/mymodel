@@ -28,8 +28,8 @@ MyModel wraps **any LLM provider** into a single OpenAI-compatible API. You writ
 Works with **OpenAI, Anthropic, Groq, Together, Fireworks, Regolo, Ollama, local vLLM** — anything that speaks OpenAI format.
 
 ```
-                                           ┌─ claude-sonnet-4 (complex reasoning)
-Your app ──> MyModel ──> brick ────────────┼─ gpt-4o (coding)
+                                           ┌─ claude-opus-4-6 (complex reasoning)
+Your app ──> MyModel ──> yourmodel ────────┼─ gpt-5.4-codex (coding)
              :8000       (auto-routes)     ├─ qwen3.5-122b (images + OCR)
                                            └─ faster-whisper (audio)
 ```
@@ -66,7 +66,7 @@ providers:
 text_routes:
   - name: reasoning
     provider: anthropic
-    model: claude-sonnet-4-20250514
+    model: claude-opus-4-6
     priority: 80
     operator: OR
     signals:
@@ -74,7 +74,7 @@ text_routes:
 
   - name: coding
     provider: openai
-    model: gpt-4o
+    model: gpt-5.4-codex
     priority: 70
     operator: OR
     signals:
@@ -101,7 +101,7 @@ modality_routes:
 server_port: 8000
 ```
 
-Three providers, one endpoint. Complex reasoning goes to Claude, coding to GPT-4o, everything else to Regolo's open-source model. Images and OCR go to Qwen 3.5 122B, audio gets transcribed by Whisper.
+Three providers, one endpoint. Complex reasoning goes to Claude Opus, coding to GPT-5.4 Codex, everything else to Regolo's open-source model. Images and OCR go to Qwen 3.5 122B, audio gets transcribed by Whisper.
 
 ### 2. Build & run
 
@@ -155,13 +155,13 @@ providers:
 text_routes:
   - name: default
     provider: openai
-    model: gpt-4o-mini
+    model: gpt-5.4-codex
     priority: 0
     operator: OR
 modality_routes:
   multimodal:
     provider: openai
-    model: gpt-4o
+    model: gpt-5.4-codex
 ```
 
 ### Anthropic
@@ -175,7 +175,7 @@ providers:
 text_routes:
   - name: default
     provider: anthropic
-    model: claude-sonnet-4-20250514
+    model: claude-opus-4-6
     priority: 0
     operator: OR
 ```
@@ -292,7 +292,7 @@ providers:
 text_routes:
   - name: coding
     provider: smart
-    model: gpt-4o
+    model: gpt-5.4-codex
     priority: 80
     operator: OR
     signals:
@@ -308,10 +308,10 @@ text_routes:
 modality_routes:
   multimodal:
     provider: vision
-    model: gpt-4o
+    model: gpt-5.4-codex
 ```
 
-This sends coding questions to GPT-4o, everything else to Llama on Groq (fast and cheap), and images to GPT-4o vision.
+This sends coding questions to GPT-5.4 Codex, everything else to Llama on Groq (fast and cheap), and images to GPT-5.4 vision.
 
 ---
 
@@ -350,7 +350,7 @@ Route different questions to different models based on content:
 text_routes:
   - name: coding
     provider: smart
-    model: gpt-4o
+    model: gpt-5.4-codex
     priority: 80
     operator: OR
     signals:
@@ -359,7 +359,7 @@ text_routes:
 
   - name: math
     provider: smart
-    model: gpt-4o
+    model: claude-opus-4-6
     priority: 70
     operator: OR
     signals:

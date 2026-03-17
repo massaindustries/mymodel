@@ -29,8 +29,8 @@ Works with **OpenAI, Anthropic, Groq, Together, Fireworks, Regolo, Ollama, local
 
 ```
                                            ┌─ claude-sonnet-4 (complex reasoning)
-Your app ──> MyModel ──> brick ────────────┼─ gpt-4o-mini (everyday questions)
-             :8000       (auto-routes)     ├─ gpt-4o (images)
+Your app ──> MyModel ──> brick ────────────┼─ gpt-4o (coding)
+             :8000       (auto-routes)     ├─ qwen3.5-122b (images + OCR)
                                            └─ faster-whisper (audio)
 ```
 
@@ -89,8 +89,11 @@ text_routes:
 
 modality_routes:
   multimodal:
-    provider: openai
-    model: gpt-4o
+    provider: regoloai
+    model: qwen3.5-122b
+  image:
+    provider: regoloai
+    model: qwen3.5-122b
   audio:
     provider: regoloai
     model: faster-whisper-large-v3
@@ -98,7 +101,7 @@ modality_routes:
 server_port: 8000
 ```
 
-Three providers, one endpoint. Complex reasoning goes to Claude, coding to GPT-4o, everything else to Regolo's open-source model. Images go to GPT-4o vision, audio gets transcribed by Whisper.
+Three providers, one endpoint. Complex reasoning goes to Claude, coding to GPT-4o, everything else to Regolo's open-source model. Images and OCR go to Qwen 3.5 122B, audio gets transcribed by Whisper.
 
 ### 2. Build & run
 
@@ -245,10 +248,10 @@ modality_routes:
     model: faster-whisper-large-v3
   image:
     provider: regoloai
-    model: deepseek-ocr
+    model: qwen3.5-122b
   multimodal:
     provider: regoloai
-    model: qwen3-vl-32b
+    model: qwen3.5-122b
 ```
 
 ### Ollama (local)

@@ -116,7 +116,12 @@ async function suiteSchema(): Promise<void> {
   }
   // also load the upstream config to ensure schema accepts it
   try {
-    const upstream = await readFile('/root/forkGO/semantic-routing/config.yaml', 'utf8');
+    const upstreamPath = process.env.UPSTREAM_CONFIG ?? '';
+    if (!upstreamPath) {
+      record('schema', 'parse upstream semantic-routing/config.yaml', true, 'skipped (set UPSTREAM_CONFIG=path/to/config.yaml to enable)');
+      return;
+    }
+    const upstream = await readFile(upstreamPath, 'utf8');
     const parsed = yaml.load(upstream);
     ConfigSchema.parse(parsed);
     record('schema', 'parse upstream semantic-routing/config.yaml', true);

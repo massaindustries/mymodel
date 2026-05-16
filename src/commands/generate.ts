@@ -6,6 +6,7 @@ export default class Generate extends Command {
   static description = 'One-shot completion against the router (prints assistant content to stdout)';
   static args = { prompt: Args.string({ required: true }) };
   static flags = {
+    profile: Flags.string({ description: 'profile name (defaults to running or active profile)' }),
     model: Flags.string({ default: 'brick' }),
     system: Flags.string(),
     'max-tokens': Flags.integer({ default: 512 }),
@@ -13,7 +14,7 @@ export default class Generate extends Command {
   };
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Generate);
-    const cfg = await loadConfig();
+    const cfg = await loadConfig(flags.profile);
     const baseUrl = `http://localhost:${cfg.server_port}`;
     const messages = [];
     if (flags.system) messages.push({ role: 'system' as const, content: flags.system });

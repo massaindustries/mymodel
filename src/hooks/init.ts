@@ -1,11 +1,15 @@
 import type { Hook } from '@oclif/core';
 import { printLogo } from '../lib/ui/banners.js';
+import { ensureMigrated } from '../lib/config/migrate.js';
 
 const HELP_TRIGGERS = new Set(['help', '--help', '-h']);
 // Commands that already render their own banner internally — skip to avoid double logo.
 const COMMANDS_WITH_OWN_BANNER = new Set(['init', 'serve']);
 
 const hook: Hook<'init'> = async function (_opts) {
+  // Idempotent legacy → multi-profile migration. Runs once per process.
+  try { await ensureMigrated(); } catch { /* never block CLI startup on migration */ }
+
   // opts.argv contains only the *command's* args (after the command name has been resolved),
   // so we read the original process.argv to know which command was invoked.
   const argv = process.argv.slice(2);

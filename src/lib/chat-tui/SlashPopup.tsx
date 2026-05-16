@@ -12,7 +12,10 @@ export interface SlashCommand {
 export const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/thinking', description: 'visibility · mode (off/low/medium/high/auto/router-default)' },
   { name: '/stream', description: 'toggle streaming on/off' },
-  { name: '/reset', description: 'clear chat history' },
+  { name: '/BABL', description: 'Babele mode: N models debate · on/off · turns N', aliases: ['/babl', '/babel'] },
+  { name: '/turns', description: 'BABL: set number of debate turns (1..10) — only when BABL on' },
+  { name: '/clear', description: 'clear screen and reset chat to welcome', aliases: ['/cls'] },
+  { name: '/reset', description: 'clear chat history (keep screen)' },
   { name: '/quit', description: 'exit chat', aliases: ['/exit'] },
 ];
 
@@ -32,7 +35,7 @@ export function SlashPopup({ items, selected }: { items: SlashCommand[]; selecte
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
         <Text color="yellow">no matching command</Text>
-        <Text dimColor>type /quit /reset /thinking /stream</Text>
+        <Text dimColor>type /quit /clear /reset /thinking /stream</Text>
       </Box>
     );
   }

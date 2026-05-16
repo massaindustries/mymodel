@@ -9,16 +9,17 @@ import { defaultImage } from './image.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = join(__dirname, '..', '..', '..', 'templates');
 
-export async function writeCompose(opts: { port: number; image?: string; projectName?: string }): Promise<void> {
+export async function writeCompose(opts: { profile: string; port: number; image?: string }): Promise<void> {
+  const p = paths(opts.profile);
   const tplPath = join(TEMPLATE_DIR, 'docker-compose.yaml.hbs');
   const tpl = await readFile(tplPath, 'utf8');
   const compiled = Handlebars.compile(tpl)({
     port: opts.port,
     image: opts.image ?? defaultImage(),
-    projectName: opts.projectName ?? 'mymodel',
-    configPath: paths.config,
-    envPath: paths.env,
-    modelsPath: paths.models,
+    projectName: `mymodel-${opts.profile}`,
+    configPath: p.config,
+    envPath: p.env,
+    modelsPath: p.models,
   });
-  await saveText(compiled, paths.compose);
+  await saveText(compiled, p.compose);
 }

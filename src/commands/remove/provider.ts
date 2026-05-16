@@ -13,7 +13,7 @@ export default class RemoveProvider extends Command {
     if (!raw.providers?.[args.id]) { err(`provider '${args.id}' not found`); this.exit(1); }
     delete raw.providers[args.id];
     if (raw.provider_profiles) delete raw.provider_profiles[args.id];
-    if (Array.isArray(raw.vllm_endpoints)) raw.vllm_endpoints = raw.vllm_endpoints.filter((v: any) => v.name !== args.id);
+    if (Array.isArray(raw.provider_endpoints)) raw.provider_endpoints = raw.provider_endpoints.filter((v: any) => v.name !== args.id);
     if (raw.model_config) {
       for (const [m, mc] of Object.entries<any>(raw.model_config)) {
         mc.preferred_endpoints = (mc.preferred_endpoints ?? []).filter((p: string) => p !== args.id);

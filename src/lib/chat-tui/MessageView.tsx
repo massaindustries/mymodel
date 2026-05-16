@@ -8,7 +8,7 @@ const accent = '#00d4aa';
 export function MessageView({ msg, showThinking }: { msg: Message; showThinking: boolean }) {
   if (msg.role === 'user') {
     return (
-      <Box marginTop={1} flexDirection="column">
+      <Box marginTop={1} flexDirection="column" flexShrink={0}>
         <Text color="cyan">▌ you</Text>
         <Text>{msg.content}</Text>
       </Box>
@@ -16,7 +16,7 @@ export function MessageView({ msg, showThinking }: { msg: Message; showThinking:
   }
   if (msg.role === 'system') {
     return (
-      <Box marginTop={1}>
+      <Box marginTop={1} flexShrink={0}>
         <Text dimColor italic>· {msg.content}</Text>
       </Box>
     );
@@ -32,12 +32,12 @@ function AssistantView({ msg, showThinking }: { msg: AssistantMessage; showThink
   const reasoningTokApprox = Math.round(reasoningChars / 4);
 
   return (
-    <Box marginTop={1} flexDirection="column">
+    <Box marginTop={1} flexDirection="column" flexShrink={0}>
       {/* Reasoning section */}
       {msg.reasoning.length > 0 && showThinking && (
         <Box flexDirection="column" marginBottom={1}>
-          <Text color="magenta" dimColor>thinking</Text>
-          <Text dimColor italic>{msg.reasoning}</Text>
+          <Text color="green" dimColor>thinking</Text>
+          <Text color="green" dimColor italic>{msg.reasoning}</Text>
         </Box>
       )}
 

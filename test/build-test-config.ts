@@ -23,15 +23,15 @@ export interface BuildOpts {
 export async function buildConfig(opts: BuildOpts): Promise<BrickConfig> {
   const providers: Record<string, any> = {};
   const providerProfiles: Record<string, any> = {};
-  const vllmEndpoints: any[] = [];
+  const providerEndpoints: any[] = [];
   const modelConfig: Record<string, any> = {};
   const reasoningFamilies: Record<string, any> = {};
 
   for (const pid of opts.providers) {
     const cat = catalog[pid];
-    providers[pid] = { type: 'openai-compatible', base_url: cat.base_url };
-    providerProfiles[pid] = { type: 'openai', base_url: cat.base_url };
-    vllmEndpoints.push({ name: pid, provider_profile: pid, weight: 1 });
+    providers[pid] = { type: 'openai_compatible', base_url: cat.base_url };
+    providerProfiles[pid] = { type: 'openai_compatible', base_url: cat.base_url };
+    providerEndpoints.push({ name: pid, provider_profile: pid, weight: 1 });
     for (const m of cat.models) {
       modelConfig[m.id] = {
         preferred_endpoints: [pid],
@@ -82,7 +82,7 @@ export async function buildConfig(opts: BuildOpts): Promise<BrickConfig> {
     server_port: opts.port ?? 8000,
     auto_model_name: 'brick',
     provider_profiles: providerProfiles,
-    vllm_endpoints: vllmEndpoints,
+    provider_endpoints: providerEndpoints,
     default_model: hasRegolo ? 'qwen3.5-122b' : 'gpt-4o',
     model_config: modelConfig,
     reasoning_families: reasoningFamilies,

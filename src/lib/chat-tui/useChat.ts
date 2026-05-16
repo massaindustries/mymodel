@@ -128,6 +128,30 @@ export function useChat(opts: UseChatOpts) {
     setMessages((m) => [...m, { id: nextId++, role: 'system', content: text } as SystemMessage]);
   }, []);
 
+  const pushUserMessage = useCallback((text: string) => {
+    sysHistory.current.push(text);
+    setMessages((m) => [...m, { id: nextId++, role: 'user', content: text, ts: Date.now() } as UserMessage]);
+  }, []);
+
+  const pushAssistantMessage = useCallback((content: string, model?: string) => {
+    const now = Date.now();
+    const msg: AssistantMessage = {
+      id: nextId++,
+      role: 'assistant',
+      content,
+      reasoning: '',
+      selectedModel: model,
+      status: 'done',
+      startedAt: now,
+      finishedAt: now,
+    };
+    setMessages((m) => [...m, msg]);
+  }, []);
+
+  const buildHistorySnapshot = useCallback((): ChatMessage[] => {
+    return buildHistoryWith(messages, opts.systemPrompt, []);
+  }, [messages, opts.systemPrompt]);
+
   return {
     messages,
     queue,
@@ -139,6 +163,9 @@ export function useChat(opts: UseChatOpts) {
     interrupt,
     reset,
     pushSystemNote,
+    pushUserMessage,
+    pushAssistantMessage,
+    buildHistorySnapshot,
     history: sysHistory.current,
   };
 }

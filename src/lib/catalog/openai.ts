@@ -3,7 +3,7 @@ import type { CatalogProvider } from './index.js';
 export const openaiCatalog: CatalogProvider = {
   id: 'openai',
   label: 'OpenAI',
-  type: 'openai-compatible',
+  type: 'openai_compatible',
   base_url: 'https://api.openai.com/v1',
   env_key: 'OPENAI_API_KEY',
   models: [

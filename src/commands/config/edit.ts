@@ -1,8 +1,8 @@
-import { Command } from '@oclif/core';
+import { Args, Command } from '@oclif/core';
 import * as p from '@clack/prompts';
 import { readFile } from 'node:fs/promises';
 import yaml from 'js-yaml';
-import { paths } from '../../lib/config/paths.js';
+import { paths, resolveProfile } from '../../lib/config/paths.js';
 import { ConfigSchema, type BrickConfig } from '../../lib/config/schema.js';
 import { saveConfig } from '../../lib/config/save.js';
 import { catalog } from '../../lib/catalog/index.js';
@@ -13,22 +13,31 @@ import { err } from '../../lib/ui/banners.js';
 function isCancel(v: unknown): boolean { return p.isCancel(v); }
 function abort(): never { p.cancel('aborted'); process.exit(0); }
 
+let currentEnvPath: string = '';
+
 export default class ConfigEdit extends Command {
-  static description = 'Edit the current configuration through a navigable menu';
+  static description = 'Edit the configuration of a profile through a navigable menu';
+  static args = {
+    profile: Args.string({ required: false, description: 'profile name (defaults to active profile)' }),
+  };
 
   async run(): Promise<void> {
+    const { args } = await this.parse(ConfigEdit);
+    const profile = resolveProfile(args.profile);
+    const pp = paths(profile);
     let cfg: BrickConfig;
     let raw: any;
     try {
-      const text = await readFile(paths.config, 'utf8');
+      const text = await readFile(pp.config, 'utf8');
       raw = yaml.load(text);
       cfg = ConfigSchema.parse(raw);
     } catch (e: any) {
-      err(`cannot load ${paths.config}: ${e?.message ?? e}`);
+      err(`cannot load ${pp.config}: ${e?.message ?? e}`);
       this.exit(1);
     }
 
-    p.intro('mymodel config edit');
+    currentEnvPath = pp.env;
+    p.intro(`mymodel config edit (profile: ${profile})`);
     let dirty = false;
 
     while (true) {
@@ -39,11 +48,12 @@ export default class ConfigEdit extends Command {
           { value: 'models', label: 'Models', hint: `${Object.keys(cfg.model_config ?? {}).length} entries` },
           { value: 'default_model', label: 'Default model', hint: cfg.default_model },
           { value: 'server_port', label: 'Server port', hint: String(cfg.server_port) },
-          { value: 'classifier', label: 'Classifier (ModernBERT domain)', hint: cfg.classifier ? 'on' : 'off' },
-          { value: 'complexity', label: 'Complexity service', hint: cfg.complexity_service?.enabled ? `${cfg.complexity_service.address}:${cfg.complexity_service.port}` : 'off' },
+          { value: 'skill_router', label: 'Skill router', hint: cfg.skill_router?.enabled ? `${cfg.skill_router.models.length} models` : 'off' },
+          { value: 'classifier', label: 'Legacy classifier (domain)', hint: cfg.classifier ? 'on' : 'off' },
+          { value: 'complexity', label: 'Complexity service', hint: cfg.complexity_service?.enabled ? (cfg.complexity_service.base_url ?? `${cfg.complexity_service.address}:${cfg.complexity_service.port}`) : 'off' },
           { value: 'brick', label: 'Multimodal Brick (STT/OCR/Vision)', hint: cfg.brick?.enabled ? 'on' : 'off' },
           { value: 'reasoning_effort', label: 'Default reasoning effort', hint: cfg.default_reasoning_effort },
-          { value: 'decisions', label: 'Decisions', hint: `${cfg.decisions.length} routes` },
+          { value: 'decisions', label: 'Legacy decisions', hint: `${cfg.decisions.length} routes` },
           { value: 'plugins', label: 'Plugins (PII / jailbreak / cache / prompt-guard)' },
           { value: 'save', label: dirty ? 'Save and exit' : 'Exit (no changes)' },
           { value: 'discard', label: 'Discard changes and exit' },
@@ -54,9 +64,9 @@ export default class ConfigEdit extends Command {
       if (sec === 'save') {
         if (!dirty) { p.outro('no changes'); return; }
         cfg = ConfigSchema.parse(cfg);
-        await saveConfig(cfg);
-        await writeCompose({ port: cfg.server_port });
-        p.outro(`saved to ${paths.config} (compose updated for port ${cfg.server_port})`);
+        await saveConfig(cfg, profile);
+        await writeCompose({ profile, port: cfg.server_port });
+        p.outro(`saved to ${pp.config} (compose updated for port ${cfg.server_port})`);
         return;
       }
       if (sec === 'discard') { p.outro('discarded'); return; }
@@ -73,6 +83,7 @@ async function editSection(cfg: BrickConfig, section: string): Promise<boolean> 
     case 'models': return await editModels(cfg);
     case 'default_model': return await editDefaultModel(cfg);
     case 'server_port': return await editServerPort(cfg);
+    case 'skill_router': return await editSkillRouter(cfg);
     case 'classifier': return await editClassifier(cfg);
     case 'complexity': return await editComplexity(cfg);
     case 'brick': return await editBrick(cfg);
@@ -126,11 +137,11 @@ async function editProviders(cfg: BrickConfig): Promise<boolean> {
       baseUrl = catalog[id].base_url;
     }
     cfg.providers ??= {} as any;
-    (cfg.providers as any)[id] = { type: 'openai-compatible', base_url: baseUrl };
+    (cfg.providers as any)[id] = { type: 'openai_compatible', base_url: baseUrl };
     cfg.provider_profiles ??= {} as any;
-    (cfg.provider_profiles as any)[id] = { type: 'openai', base_url: baseUrl };
-    if (!cfg.vllm_endpoints.find((v) => v.name === id)) cfg.vllm_endpoints.push({ name: id, provider_profile: id, weight: 1 });
-    p.note(`provider '${id}' added. remember to put the API key in ${paths.env} (variable ${(catalog[id]?.env_key) ?? `${id.toUpperCase()}_API_KEY`}).`, 'providers');
+    (cfg.provider_profiles as any)[id] = { type: 'openai_compatible', base_url: baseUrl };
+    if (!cfg.provider_endpoints.find((v) => v.name === id)) cfg.provider_endpoints.push({ name: id, provider_profile: id, weight: 1 });
+    p.note(`provider '${id}' added. remember to put the API key in ${currentEnvPath} (variable ${(catalog[id]?.env_key) ?? `${id.toUpperCase()}_API_KEY`}).`, 'providers');
     return true;
   }
 
@@ -142,7 +153,7 @@ async function editProviders(cfg: BrickConfig): Promise<boolean> {
   const id = String(idSel);
   delete (cfg.providers as any)[id];
   if (cfg.provider_profiles) delete (cfg.provider_profiles as any)[id];
-  cfg.vllm_endpoints = cfg.vllm_endpoints.filter((v) => v.name !== id);
+  cfg.provider_endpoints = cfg.provider_endpoints.filter((v) => v.name !== id);
   for (const [m, mc] of Object.entries(cfg.model_config ?? {})) {
     mc.preferred_endpoints = (mc.preferred_endpoints ?? []).filter((pp: string) => pp !== id);
     if (mc.preferred_endpoints.length === 0) delete (cfg.model_config as any)[m];
@@ -244,6 +255,32 @@ async function editServerPort(cfg: BrickConfig): Promise<boolean> {
   return true;
 }
 
+async function editSkillRouter(cfg: BrickConfig): Promise<boolean> {
+  if (!cfg.skill_router) {
+    p.note('skill_router is not configured. Run `mymodel init` or edit YAML with `mymodel config ai` to add model skill vectors.', 'skill_router');
+    return false;
+  }
+  const action = await p.select({
+    message: 'Skill router:',
+    options: [
+      { value: 'list', label: `View models (${cfg.skill_router.models.length})` },
+      { value: 'toggle', label: cfg.skill_router.enabled ? 'Disable' : 'Enable' },
+      { value: 'back', label: '← back' },
+    ],
+  });
+  if (isCancel(action)) abort();
+  if (action === 'back') return false;
+  if (action === 'list') {
+    p.note(
+      cfg.skill_router.models.map((m) => `${m.model} · [${m.skill_vector.map((v) => v.toFixed(3)).join(', ')}]`).join('\n') || '(none)',
+      'skill_router'
+    );
+    return false;
+  }
+  cfg.skill_router.enabled = !cfg.skill_router.enabled;
+  return true;
+}
+
 async function editClassifier(cfg: BrickConfig): Promise<boolean> {
   const enable = await p.confirm({ message: 'Enable ModernBERT domain classifier?', initialValue: !!cfg.classifier });
   if (isCancel(enable)) abort();
@@ -273,18 +310,19 @@ async function editClassifier(cfg: BrickConfig): Promise<boolean> {
 }
 
 async function editComplexity(cfg: BrickConfig): Promise<boolean> {
-  const enable = await p.confirm({ message: 'Enable external complexity service (NVIDIA Qwen)?', initialValue: !!cfg.complexity_service?.enabled });
+  const enable = await p.confirm({ message: 'Enable Brick2 complexity service?', initialValue: !!cfg.complexity_service?.enabled });
   if (isCancel(enable)) abort();
   if (!enable) {
     if (!cfg.complexity_service?.enabled) return false;
     cfg.complexity_service = undefined as any;
     return true;
   }
-  const addr = await p.text({ message: 'Address:', defaultValue: cfg.complexity_service?.address ?? '172.19.0.1' });
-  if (isCancel(addr)) abort();
-  const port = await p.text({ message: 'Port:', defaultValue: String(cfg.complexity_service?.port ?? 8094) });
-  if (isCancel(port)) abort();
-  cfg.complexity_service = { enabled: true, address: String(addr).trim(), port: Number(port), timeout_seconds: 5 };
+  const baseUrl = await p.text({ message: 'Base URL:', defaultValue: cfg.complexity_service?.base_url ?? 'http://127.0.0.1:8094' });
+  if (isCancel(baseUrl)) abort();
+  cfg.complexity_service = { enabled: true, base_url: String(baseUrl).trim(), timeout_seconds: 8, auto_spawn: false };
+  if (cfg.skill_router) {
+    cfg.skill_router.complexity_model.base_url = cfg.complexity_service.base_url;
+  }
   return true;
 }
 

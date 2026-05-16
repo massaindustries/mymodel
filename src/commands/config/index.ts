@@ -1,14 +1,21 @@
-import { Command, Flags } from '@oclif/core';
+import { Args, Command, Flags } from '@oclif/core';
 import { readFile } from 'node:fs/promises';
 import chalk from 'chalk';
 import yaml from 'js-yaml';
-import { paths } from '../../lib/config/paths.js';
+import { paths, resolveProfile, listProfiles, readState } from '../../lib/config/paths.js';
 import { ConfigSchema } from '../../lib/config/schema.js';
-import { err, info } from '../../lib/ui/banners.js';
-import { makeTable } from '../../lib/ui/tables.js';
+import { err, info, print } from '../../lib/ui/banners.js';
+import { makeTable, renderTable } from '../../lib/ui/tables.js';
+
+const SUB_VERBS = new Set(['ai', 'edit']);
 
 export default class ConfigShow extends Command {
-  static description = 'Show the current configuration (~/.mymodel/config.yaml)';
+  static description = 'Show the configuration of a profile (or, with `<profile> ai`/`edit`, dispatch to that sub-command)';
+  static strict = false;
+  static args = {
+    profile: Args.string({ required: false, description: 'profile name (defaults to active profile)' }),
+    action: Args.string({ required: false, description: 'optional: "ai" or "edit" to open that sub-command for the profile' }),
+  };
   static flags = {
     raw: Flags.boolean({ default: false, description: 'print the YAML verbatim (no summary)' }),
     json: Flags.boolean({ default: false, description: 'print as JSON' }),
@@ -16,13 +23,29 @@ export default class ConfigShow extends Command {
   };
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(ConfigShow);
+    const { args, flags } = await this.parse(ConfigShow);
 
-    if (flags.path) { console.log(paths.config); return; }
+    // Allow `mymodel config <profile> ai` / `<profile> edit` syntax by re-dispatching.
+    if (args.profile && args.action && SUB_VERBS.has(args.action)) {
+      const target = args.action === 'ai' ? 'config:ai' : 'config:edit';
+      await this.config.runCommand(target, [args.profile]);
+      return;
+    }
+
+    if (!args.profile && listProfiles().length === 0) {
+      err('no profiles configured. Run `mymodel config new <name>` to create one.');
+      this.exit(1);
+    }
+
+    const profile = resolveProfile(args.profile);
+    const pp = paths(profile);
+    const state = readState();
+
+    if (flags.path) { console.log(pp.config); return; }
 
     let raw: string;
-    try { raw = await readFile(paths.config, 'utf8'); }
-    catch { err(`no config at ${paths.config}. Run \`mymodel init\` first.`); this.exit(1); }
+    try { raw = await readFile(pp.config, 'utf8'); }
+    catch { err(`no config at ${pp.config}.`); this.exit(1); }
 
     if (flags.raw) { process.stdout.write(raw); return; }
 
@@ -33,43 +56,54 @@ export default class ConfigShow extends Command {
 
     const cfg = ConfigSchema.parse(parsed);
 
-    info(`config path: ${chalk.cyan(paths.config)}`);
+    const flags_str: string[] = [];
+    if (state.activeProfile === profile) flags_str.push(chalk.green('active'));
+    if (state.runningProfile === profile) flags_str.push(chalk.green('● running'));
+    info(`profile: ${chalk.cyan(profile)}${flags_str.length ? '  ' + flags_str.join(' · ') : ''}`);
+    info(`config path: ${chalk.cyan(pp.config)}`);
     info(`server port: ${chalk.cyan(String(cfg.server_port))}  ·  default model: ${chalk.cyan(cfg.default_model)}  ·  reasoning effort: ${chalk.cyan(cfg.default_reasoning_effort)}`);
 
-    // providers table
     const provTable = makeTable(['provider', 'type', 'base_url']);
     for (const [id, p] of Object.entries(cfg.providers ?? {})) provTable.push([id, p.type, p.base_url]);
-    console.log('\n' + chalk.bold('providers') + '\n' + provTable.toString());
+    print();
+    print(chalk.bold('providers'));
+    print(renderTable(provTable));
 
-    // models table
     const mTable = makeTable(['model', 'endpoints', 'param_size', 'reasoning_family']);
     for (const [id, m] of Object.entries(cfg.model_config ?? {})) {
       mTable.push([id + (id === cfg.default_model ? chalk.green(' (default)') : ''), (m.preferred_endpoints ?? []).join(','), m.param_size ?? '-', m.reasoning_family ?? '-']);
     }
-    console.log('\n' + chalk.bold('models') + '\n' + mTable.toString());
+    print();
+    print(chalk.bold('models'));
+    print(renderTable(mTable));
 
-    // decisions table
-    const dTable = makeTable(['decision', 'description', 'model(s)', 'reasoning']);
-    for (const d of cfg.decisions ?? []) {
-      const refs = d.modelRefs.map((r: any) => r.model + (r.use_reasoning ? `*` : '')).join(', ');
-      const reasoning = d.modelRefs.some((r: any) => r.use_reasoning) ? `effort=${d.modelRefs[0].reasoning_effort ?? 'medium'}` : '-';
-      dTable.push([d.name, d.description ?? '', refs, reasoning]);
+    const srTable = makeTable(['skill model', 'vector', 'reasoning']);
+    for (const m of cfg.skill_router?.models ?? []) {
+      srTable.push([
+        m.model,
+        m.skill_vector.map((v: number) => v.toFixed(3)).join(','),
+        m.use_reasoning ? `on (${m.reasoning_effort ?? 'medium'})` : '-',
+      ]);
     }
-    console.log('\n' + chalk.bold('decisions') + '\n' + dTable.toString());
+    print();
+    print(chalk.bold('skill router'));
+    print(renderTable(srTable));
 
-    // features summary
     const features: string[] = [];
-    features.push(`classifier: ${cfg.classifier ? chalk.green('on') : chalk.dim('off')}` + (cfg.classifier ? ` (threshold ${cfg.classifier.category_model.threshold})` : ''));
-    features.push(`complexity_service: ${cfg.complexity_service?.enabled ? chalk.green('on') : chalk.dim('off')}` + (cfg.complexity_service?.enabled ? ` (${cfg.complexity_service.address}:${cfg.complexity_service.port})` : ''));
+    features.push(`skill_router: ${cfg.skill_router?.enabled ? chalk.green('on') : chalk.dim('off')}` + (cfg.skill_router?.enabled ? ` (${cfg.skill_router.models.length} models · ${cfg.skill_router.capabilities.length}D)` : ''));
+    const complexityEndpoint = cfg.complexity_service?.base_url ?? (cfg.complexity_service?.address ? `${cfg.complexity_service.address}:${cfg.complexity_service.port ?? 8094}` : '');
+    features.push(`complexity_service: ${cfg.complexity_service?.enabled ? chalk.green('on') : chalk.dim('off')}` + (cfg.complexity_service?.enabled ? ` (${complexityEndpoint})` : ''));
     features.push(`brick multimodal: ${cfg.brick?.enabled ? chalk.green('on') : chalk.dim('off')}` + (cfg.brick?.enabled ? ` (STT=${cfg.brick.stt_model} OCR=${cfg.brick.ocr_model} Vision=${cfg.brick.vision_model})` : ''));
     if (cfg.plugins) {
       const enabled = Object.entries(cfg.plugins).filter(([, v]: any) => v?.enabled).map(([k]) => k);
       features.push(`plugins: ${enabled.length ? chalk.green(enabled.join(', ')) : chalk.dim('none')}`);
     }
-    features.push(`keyword_rules: ${cfg.keyword_rules.length}  ·  decisions: ${cfg.decisions.length}  ·  models: ${Object.keys(cfg.model_config).length}`);
-    console.log('\n' + chalk.bold('features'));
-    for (const f of features) console.log('  ' + f);
+    features.push(`keyword_rules: ${cfg.skill_router?.keyword_rules.length ?? 0}  ·  legacy decisions: ${cfg.decisions.length}  ·  models: ${Object.keys(cfg.model_config).length}`);
+    print();
+    print(chalk.bold('features'));
+    for (const f of features) print('  ' + f);
 
-    info(`\nrun \`mymodel config edit\` to change values interactively, or edit ${paths.config} manually.`);
+    print();
+    info(`run \`mymodel config ${profile} edit\` to change values, or \`mymodel config ${profile} ai\` for guided edits.`);
   }
 }

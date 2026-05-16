@@ -10,26 +10,31 @@ export const WARN = chalk.hex('#ffaa00');
 export const FEATURE_CYAN = chalk.hex('#00bcd4');
 export const FEATURE_PURPLE = chalk.hex('#b388ff');
 
-const LOGO_RAW = `
-     ___           ___           ___           ___           ___           ___           ___
-    /\\__\\         |\\__\\         /\\__\\         /\\  \\         /\\  \\         /\\  \\         /\\__\\
-   /::|  |        |:|  |       /::|  |       /::\\  \\       /::\\  \\       /::\\  \\       /:/  /
-  /:|:|  |        |:|  |      /:|:|  |      /:/\\:\\  \\     /:/\\:\\  \\     /:/\\:\\  \\     /:/  /
- /:/|:|__|__      |:|__|__   /:/|:|__|__   /:/  \\:\\  \\   /:/  \\:\\__\\   /::\\~\\:\\  \\   /:/  /
-/:/ |::::\\__\\     /::::\\__\\ /:/ |::::\\__\\ /:/__/ \\:\\__\\ /:/__/ \\:|__| /:/\\:\\ \\:\\__\\ /:/__/
-\\/__/~~/:/  /    /:/~~/~    \\/__/~~/:/  / \\:\\  \\ /:/  / \\:\\  \\ /:/  / \\:\\~\\:\\ \\/__/ \\:\\  \\
-      /:/  /    /:/  /            /:/  /   \\:\\  /:/  /   \\:\\  /:/  /   \\:\\ \\:\\__\\    \\:\\  \\
-     /:/  /     \\/__/            /:/  /     \\:\\/:/  /     \\:\\/:/  /     \\:\\ \\/__/     \\:\\  \\
-    /:/  /                      /:/  /       \\::/  /       \\::/__/       \\:\\__\\        \\:\\__\\
-    \\/__/                       \\/__/         \\/__/         ~~            \\/__/         \\/__/`;
+const LOGO_LINES = [
+  '███╗   ███╗██╗   ██╗███╗   ███╗ ██████╗ ██████╗ ███████╗██╗     ',
+  '████╗ ████║╚██╗ ██╔╝████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║     ',
+  '██╔████╔██║ ╚████╔╝ ██╔████╔██║██║   ██║██║  ██║█████╗  ██║     ',
+  '██║╚██╔╝██║  ╚██╔╝  ██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║     ',
+  '██║ ╚═╝ ██║   ██║   ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗',
+  '╚═╝     ╚═╝   ╚═╝   ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝',
+];
+
+export const LEFT_PAD = '  ';
 
 export function printLogo(): void {
-  console.log(ACCENT(LOGO_RAW));
+  console.log();
+  for (const line of LOGO_LINES) console.log(LEFT_PAD + ACCENT(line));
   console.log();
 }
 
 export function header(text: string): void {
-  console.log('\n' + ACCENT_BOLD('━━━ ' + text + ' ' + '━'.repeat(Math.max(0, 60 - text.length))));
+  console.log('\n' + LEFT_PAD + ACCENT_BOLD('━━━ ' + text + ' ' + '━'.repeat(Math.max(0, 60 - text.length))));
+}
+
+/** Like console.log but with a left-padding margin from the terminal edge. */
+export function print(text: string = ''): void {
+  if (!text) { console.log(); return; }
+  for (const line of text.split('\n')) console.log(LEFT_PAD + line);
 }
 
 export function ok(text: string): void {
@@ -50,6 +55,6 @@ export function info(text: string): void {
 
 export function banner(): void {
   printLogo();
-  console.log(ACCENT_DIM('   self-hosted semantic router gateway'));
+  console.log(LEFT_PAD + ACCENT_DIM('   self-hosted semantic router gateway'));
   console.log();
 }

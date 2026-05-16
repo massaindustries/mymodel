@@ -1,6 +1,7 @@
 import { Args, Command, Flags } from '@oclif/core';
 import { chatCompletion } from '../lib/client/openai.js';
 import { loadConfig } from '../lib/config/load.js';
+import { print } from '../lib/ui/banners.js';
 import chalk from 'chalk';
 
 function fmtLatency(ms: number): string {
@@ -13,6 +14,7 @@ export default class Route extends Command {
   static description = 'Show which backend model the router selects for <prompt>';
   static args = { prompt: Args.string({ required: true, description: 'user prompt' }) };
   static flags = {
+    profile: Flags.string({ description: 'profile name (defaults to running or active profile)' }),
     model: Flags.string({ default: 'brick' }),
     json: Flags.boolean({ default: false }),
     'no-generate': Flags.boolean({ default: false, description: 'use minimal max_tokens=1 to measure routing-only latency' }),
@@ -21,7 +23,7 @@ export default class Route extends Command {
   };
   async run(): Promise<void> {
     const { args, flags } = await this.parse(Route);
-    const cfg = await loadConfig();
+    const cfg = await loadConfig(flags.profile);
     const baseUrl = `http://localhost:${cfg.server_port}`;
     const maxTokens = flags['no-generate'] ? 1 : 8;
     const samples: { latencyMs: number; selectedModel?: string; thinkingApplied?: string; status: number; content: string }[] = [];
@@ -51,15 +53,17 @@ export default class Route extends Command {
       }, null, 2));
       return;
     }
-    console.log(chalk.cyan('prompt:         ') + args.prompt);
-    console.log(chalk.cyan('selected model: ') + chalk.green(last.selectedModel ?? '(no header)'));
-    if (last.thinkingApplied) console.log(chalk.cyan('thinking mode:  ') + chalk.green(last.thinkingApplied));
-    console.log(chalk.cyan('http status:    ') + last.status);
+    print();
+    print(chalk.cyan('prompt:         ') + args.prompt);
+    print(chalk.cyan('selected model: ') + chalk.green(last.selectedModel ?? '(no header)'));
+    if (last.thinkingApplied) print(chalk.cyan('thinking mode:  ') + chalk.green(last.thinkingApplied));
+    print(chalk.cyan('http status:    ') + last.status);
     if (flags.repeat === 1) {
-      console.log(chalk.cyan('latency:        ') + fmtLatency(last.latencyMs));
+      print(chalk.cyan('latency:        ') + fmtLatency(last.latencyMs));
     } else {
-      console.log(chalk.cyan('latency:        ') + `min ${fmtLatency(min)} · median ${fmtLatency(med)} · max ${fmtLatency(max)} (n=${flags.repeat})`);
+      print(chalk.cyan('latency:        ') + `min ${fmtLatency(min)} · median ${fmtLatency(med)} · max ${fmtLatency(max)} (n=${flags.repeat})`);
     }
-    console.log(chalk.cyan('preview:        ') + (last.content || '').slice(0, 200));
+    print(chalk.cyan('preview:        ') + (last.content || '').slice(0, 200));
+    print();
   }
 }

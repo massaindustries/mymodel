@@ -1,12 +1,15 @@
 import { execa } from 'execa';
-import { paths } from '../config/paths.js';
+import { paths, resolveProfile } from '../config/paths.js';
 
-export async function dockerCompose(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const r = await execa('docker', ['compose', '-f', paths.compose, ...args], { reject: false });
+export interface ExecResult { stdout: string; stderr: string; exitCode: number }
+
+export async function dockerCompose(profile: string | undefined, args: string[]): Promise<ExecResult> {
+  const p = paths(resolveProfile(profile));
+  const r = await execa('docker', ['compose', '-p', `mymodel-${p.profile}`, '-f', p.compose, ...args], { reject: false });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.exitCode ?? 1 };
 }
 
-export async function dockerCmd(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+export async function dockerCmd(args: string[]): Promise<ExecResult> {
   const r = await execa('docker', args, { reject: false });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.exitCode ?? 1 };
 }

@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
 import { loadConfigRaw } from '../../lib/config/load.js';
 import { ConfigSchema } from '../../lib/config/schema.js';
 import { saveConfig } from '../../lib/config/save.js';
-import { paths } from '../../lib/config/paths.js';
+import { paths, resolveProfile } from '../../lib/config/paths.js';
 import { catalog } from '../../lib/catalog/index.js';
 import { ok, err } from '../../lib/ui/banners.js';
 
@@ -23,12 +23,12 @@ export default class AddProvider extends Command {
     const baseUrl = flags['base-url'] ?? cat?.base_url;
     if (!baseUrl) { err('base-url required for unknown provider'); this.exit(1); }
     raw.providers = raw.providers ?? {};
-    raw.providers[args.id] = { type: 'openai-compatible', base_url: baseUrl };
+    raw.providers[args.id] = { type: 'openai_compatible', base_url: baseUrl };
     raw.provider_profiles = raw.provider_profiles ?? {};
-    raw.provider_profiles[args.id] = { type: 'openai', base_url: baseUrl };
-    raw.vllm_endpoints = raw.vllm_endpoints ?? [];
-    if (!raw.vllm_endpoints.find((v: any) => v.name === args.id)) {
-      raw.vllm_endpoints.push({ name: args.id, provider_profile: args.id, weight: 1 });
+    raw.provider_profiles[args.id] = { type: 'openai_compatible', base_url: baseUrl };
+    raw.provider_endpoints = raw.provider_endpoints ?? [];
+    if (!raw.provider_endpoints.find((v: any) => v.name === args.id)) {
+      raw.provider_endpoints.push({ name: args.id, provider_profile: args.id, weight: 1 });
     }
     const cfg = ConfigSchema.parse(raw);
     await saveConfig(cfg);
@@ -45,10 +45,11 @@ export default class AddProvider extends Command {
 }
 
 async function mergeEnv(k: string, v: string): Promise<void> {
-  await mkdir(dirname(paths.env), { recursive: true, mode: 0o700 });
+  const envPath = paths(resolveProfile()).env;
+  await mkdir(dirname(envPath), { recursive: true, mode: 0o700 });
   let txt = '';
-  try { txt = await readFile(paths.env, 'utf8'); } catch {}
+  try { txt = await readFile(envPath, 'utf8'); } catch {}
   const lines = txt.split('\n').filter((l) => !l.startsWith(`${k}=`));
   lines.push(`${k}=${v}`);
-  await writeFile(paths.env, lines.filter(Boolean).join('\n') + '\n', { mode: 0o600 });
+  await writeFile(envPath, lines.filter(Boolean).join('\n') + '\n', { mode: 0o600 });
 }

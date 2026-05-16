@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { paths } from '../config/paths.js';
+import { paths, resolveProfile } from '../config/paths.js';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -16,20 +16,26 @@ export interface ChatResult {
   latencyMs: number;
 }
 
-let cachedKey: string | null = null;
+const cachedKeyByEnvFile = new Map<string, string>();
 
-async function readApiKey(): Promise<string> {
-  if (cachedKey) return cachedKey;
-  try {
-    const env = await readFile(paths.env, 'utf8');
-    const m = env.match(/REGOLO_API_KEY=([^\s]+)/);
-    if (m) {
-      cachedKey = m[1];
-      return cachedKey;
-    }
-  } catch {}
-  cachedKey = process.env.REGOLO_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
-  return cachedKey;
+export async function readApiKey(envFile?: string): Promise<string> {
+  const target = envFile ?? (() => {
+    try { return paths(resolveProfile()).env; } catch { return ''; }
+  })();
+  if (target && cachedKeyByEnvFile.has(target)) return cachedKeyByEnvFile.get(target)!;
+  if (target) {
+    try {
+      const env = await readFile(target, 'utf8');
+      const m = env.match(/REGOLO_API_KEY=([^\s]+)/);
+      if (m) {
+        cachedKeyByEnvFile.set(target, m[1]);
+        return m[1];
+      }
+    } catch {}
+  }
+  const fallback = process.env.REGOLO_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
+  if (target) cachedKeyByEnvFile.set(target, fallback);
+  return fallback;
 }
 
 export interface StreamChunk {
@@ -53,11 +59,14 @@ export async function* chatCompletionStream(opts: {
   maxTokens?: number;
   timeoutMs?: number;
   thinking?: ThinkingMode | null;
+  selectedModel?: string;
+  signal?: AbortSignal;
 }): AsyncGenerator<StreamChunk, void, unknown> {
   const baseUrl = opts.baseUrl ?? `http://localhost:8000`;
   const key = opts.apiKey ?? (await readApiKey());
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 120000);
+  const externalSignal = opts.signal;
+  const ctrl = externalSignal ? null : new AbortController();
+  const timeout = ctrl ? setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 120000) : null;
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -65,6 +74,7 @@ export async function* chatCompletionStream(opts: {
       Authorization: `Bearer ${key}`,
     };
     if (opts.thinking) headers['X-Brick-Thinking'] = opts.thinking;
+    if (opts.selectedModel) headers['x-selected-model'] = opts.selectedModel;
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers,
@@ -74,7 +84,7 @@ export async function* chatCompletionStream(opts: {
         max_tokens: opts.maxTokens ?? 4096,
         stream: true,
       }),
-      signal: ctrl.signal,
+      signal: externalSignal ?? ctrl!.signal,
     });
     const selectedModel =
       res.headers.get('x-vsr-selected-model') ??
@@ -120,24 +130,49 @@ export async function* chatCompletionStream(opts: {
     }
     yield { type: 'done', finishReason, usage };
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
+}
+
+export interface ToolDef {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters: any;
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+export interface ChatMessageWithTools {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  name?: string;
 }
 
 export async function chatCompletion(opts: {
   baseUrl?: string;
   model?: string;
-  messages: ChatMessage[];
+  messages: ChatMessage[] | ChatMessageWithTools[];
   apiKey?: string;
   stream?: boolean;
   maxTokens?: number;
   timeoutMs?: number;
   thinking?: ThinkingMode | null;
-}): Promise<ChatResult> {
+  tools?: ToolDef[];
+  toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
+}): Promise<ChatResult & { toolCalls?: ToolCall[]; assistantMessage?: ChatMessageWithTools }> {
   const baseUrl = opts.baseUrl ?? `http://localhost:8000`;
   const key = opts.apiKey ?? (await readApiKey());
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 60000);
+  const timeout = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 180000);
   const t0 = performance.now();
   try {
     const headers: Record<string, string> = {
@@ -145,15 +180,20 @@ export async function chatCompletion(opts: {
       Authorization: `Bearer ${key}`,
     };
     if (opts.thinking) headers['X-Brick-Thinking'] = opts.thinking;
+    const body: any = {
+      model: opts.model ?? 'brick',
+      messages: opts.messages,
+      max_tokens: opts.maxTokens ?? 512,
+      stream: false,
+    };
+    if (opts.tools && opts.tools.length) {
+      body.tools = opts.tools;
+      body.tool_choice = opts.toolChoice ?? 'auto';
+    }
     const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        model: opts.model ?? 'brick',
-        messages: opts.messages,
-        max_tokens: opts.maxTokens ?? 512,
-        stream: false,
-      }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     });
     const selectedModel =
@@ -167,8 +207,23 @@ export async function chatCompletion(opts: {
     const msg = json?.choices?.[0]?.message ?? {};
     const reasoning: string | undefined = msg.reasoning_content || msg.thinking || undefined;
     const content: string = msg.content ?? json?.error?.message ?? '';
+    const toolCalls: ToolCall[] | undefined = Array.isArray(msg.tool_calls) && msg.tool_calls.length ? msg.tool_calls : undefined;
     const latencyMs = Math.round(performance.now() - t0);
-    return { content, reasoning, selectedModel, thinkingApplied, raw: json, status, latencyMs };
+    return {
+      content,
+      reasoning,
+      selectedModel,
+      thinkingApplied,
+      raw: json,
+      status,
+      latencyMs,
+      toolCalls,
+      assistantMessage: {
+        role: 'assistant',
+        content: msg.content ?? null,
+        ...(toolCalls ? { tool_calls: toolCalls } : {}),
+      },
+    };
   } finally {
     clearTimeout(timeout);
   }

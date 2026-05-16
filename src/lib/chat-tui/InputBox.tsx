@@ -13,7 +13,8 @@ export function InputBox(props: {
   hint: string;
 }) {
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column">
+      <Text dimColor>{'─'.repeat(80)}</Text>
       <Box>
         <Text color={accent}>{props.busy ? '⠿ ' : '▷ '}</Text>
         <TextInput

@@ -1,28 +1,22 @@
 import * as p from '@clack/prompts';
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
+import { dirname } from 'node:path';
 import { paths } from '../config/paths.js';
-import { saveConfig, saveText } from '../config/save.js';
+import { saveConfig } from '../config/save.js';
 import { ConfigSchema, type BrickConfig } from '../config/schema.js';
 import { catalog, reasoningFamiliesDefault } from '../catalog/index.js';
 import { writeCompose } from '../docker/compose.js';
-import { defaultDecisions } from './defaults.js';
-import { runDecisionBuilder } from './steps/decisions.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_DIR = join(__dirname, '..', '..', '..', 'templates');
-
-export async function runWizard(): Promise<BrickConfig> {
-  p.intro('mymodel — guided init');
+export async function runWizard(profile: string): Promise<BrickConfig> {
+  const pp = paths(profile);
+  p.intro(`mymodel — guided init (profile: ${profile})`);
 
   const enabledProvidersRaw = await p.multiselect({
     message: 'Which providers do you want to enable?',
     options: [
       { value: 'regolo', label: 'Regolo AI (default)', hint: 'api.regolo.ai' },
       { value: 'openai', label: 'OpenAI', hint: 'api.openai.com' },
-      { value: 'local', label: 'Local (vLLM / Ollama)', hint: 'custom endpoint' },
+      { value: 'local', label: 'Local OpenAI-compatible', hint: 'custom endpoint' },
     ],
     initialValues: ['regolo'],
     required: true,
@@ -33,7 +27,7 @@ export async function runWizard(): Promise<BrickConfig> {
   const apiKeys: Record<string, string> = {};
   const providers: Record<string, any> = {};
   const providerProfiles: Record<string, any> = {};
-  const vllmEndpoints: any[] = [];
+  const providerEndpoints: any[] = [];
 
   for (const pid of enabledProviders) {
     const cat = catalog[pid];
@@ -43,7 +37,7 @@ export async function runWizard(): Promise<BrickConfig> {
       if (p.isCancel(u)) { p.cancel('aborted'); process.exit(0); }
       baseUrl = String(u || cat.base_url);
     }
-    const existing = await readEnvKey(cat.env_key);
+    const existing = await readEnvKey(cat.env_key, pp.env);
     let key: string;
     if (existing) {
       key = existing;
@@ -53,9 +47,9 @@ export async function runWizard(): Promise<BrickConfig> {
       key = String(k);
     }
     apiKeys[cat.env_key] = key;
-    providers[pid] = { type: 'openai-compatible', base_url: baseUrl };
-    providerProfiles[pid] = { type: 'openai', base_url: baseUrl };
-    vllmEndpoints.push({ name: pid, provider_profile: pid, weight: 1 });
+    providers[pid] = { type: 'openai_compatible', base_url: baseUrl };
+    providerProfiles[pid] = { type: 'openai_compatible', base_url: baseUrl };
+    providerEndpoints.push({ name: pid, provider_profile: pid, weight: 1 });
   }
 
   // model selection per enabled provider
@@ -95,31 +89,14 @@ export async function runWizard(): Promise<BrickConfig> {
   if (p.isCancel(defaultModelChoice)) { p.cancel('aborted'); process.exit(0); }
   const defaultModel = String(defaultModelChoice);
 
-  // classifier
-  const useClassifier = await p.confirm({ message: 'Enable ModernBERT domain classifier (recommended)?', initialValue: true });
-  if (p.isCancel(useClassifier)) { p.cancel('aborted'); process.exit(0); }
-  const classifier = useClassifier
-    ? {
-        category_model: {
-          model_id: 'models/mom-domain-classifier',
-          use_modernbert: true,
-          threshold: 0.45,
-          use_cpu: true,
-          category_mapping_path: 'models/mom-domain-classifier/category_mapping.json',
-        },
-      }
-    : undefined;
-
   // complexity service
-  const useComplexity = await p.confirm({ message: 'Enable external complexity service (Qwen NVIDIA)?', initialValue: true });
+  const useComplexity = await p.confirm({ message: 'Enable Brick2 complexity service?', initialValue: true });
   if (p.isCancel(useComplexity)) { p.cancel('aborted'); process.exit(0); }
   let complexityService: any | undefined;
   if (useComplexity) {
-    const addr = await p.text({ message: 'complexity_service address:', placeholder: '172.19.0.1', defaultValue: '172.19.0.1' });
-    if (p.isCancel(addr)) { p.cancel('aborted'); process.exit(0); }
-    const port = await p.text({ message: 'complexity_service port:', placeholder: '8094', defaultValue: '8094' });
-    if (p.isCancel(port)) { p.cancel('aborted'); process.exit(0); }
-    complexityService = { enabled: true, address: String(addr || '172.19.0.1'), port: Number(port || 8094), timeout_seconds: 5 };
+    const baseUrl = await p.text({ message: 'complexity_service base_url:', placeholder: 'http://127.0.0.1:8094', defaultValue: 'http://127.0.0.1:8094' });
+    if (p.isCancel(baseUrl)) { p.cancel('aborted'); process.exit(0); }
+    complexityService = { enabled: true, base_url: String(baseUrl || 'http://127.0.0.1:8094'), timeout_seconds: 8, auto_spawn: false };
   }
 
   // multimodal brick
@@ -141,42 +118,7 @@ export async function runWizard(): Promise<BrickConfig> {
     };
   }
 
-  // keywords
-  const tplKw = await readFile(join(TEMPLATE_DIR, 'keywords.default.yaml'), 'utf8');
-  const keywordRules = yaml.load(tplKw) as any[];
-
-  // decisions
-  const decisionMode = await p.select({
-    message: 'How to define routing decisions?',
-    options: [
-      { value: 'default', label: 'Use 5-decision default template (coding_easy/hard, general_easy/medium/hard)' },
-      { value: 'custom', label: 'Build custom decisions interactively' },
-    ],
-    initialValue: 'default',
-  });
-  if (p.isCancel(decisionMode)) { p.cancel('aborted'); process.exit(0); }
-
-  let decisions: any[];
-  if (decisionMode === 'default') {
-    const codingEasyDef = pickDefaultModel(selectedModelIds, ['qwen3-coder-next', 'gpt-4o-mini', 'gpt-oss-20b']);
-    const codingHardDef = pickDefaultModel(selectedModelIds, ['minimax-m2.5', 'gpt-4o', 'gpt-4.1', 'qwen3.5-122b']);
-    const generalEasyDef = pickDefaultModel(selectedModelIds, ['qwen3.5-9b', 'gpt-4o-mini', 'Llama-3.1-8B-Instruct']);
-    const generalMedDef = pickDefaultModel(selectedModelIds, ['qwen3.5-122b', 'gpt-4.1', 'Llama-3.3-70B-Instruct']);
-    const generalHardDef = pickDefaultModel(selectedModelIds, ['minimax-m2.5', 'gpt-4o', 'gpt-4.1']);
-    const codingHardCfg = modelConfig[codingHardDef];
-    const generalHardCfg = modelConfig[generalHardDef];
-    decisions = defaultDecisions({
-      codingEasyModel: codingEasyDef,
-      codingHardModel: codingHardDef,
-      generalEasyModel: generalEasyDef,
-      generalMediumModel: generalMedDef,
-      generalHardModel: generalHardDef,
-      codingHardReasoningFamily: codingHardCfg?.reasoning_family,
-      generalHardReasoningFamily: generalHardCfg?.reasoning_family,
-    });
-  } else {
-    decisions = await runDecisionBuilder(selectedModelIds);
-  }
+  const skillRouter = buildSkillRouter(selectedModelIds, complexityService?.base_url);
 
   // assemble
   const reasoningFamilies: Record<string, any> = {};
@@ -194,15 +136,15 @@ export async function runWizard(): Promise<BrickConfig> {
     server_port: 8000,
     auto_model_name: 'brick',
     provider_profiles: providerProfiles,
-    vllm_endpoints: vllmEndpoints,
+    provider_endpoints: providerEndpoints,
     default_model: defaultModel,
     model_config: modelConfig,
     reasoning_families: reasoningFamilies,
     default_reasoning_effort: 'medium',
-    classifier,
     complexity_service: complexityService,
-    keyword_rules: keywordRules,
-    decisions,
+    skill_router: skillRouter,
+    keyword_rules: [],
+    decisions: [],
   });
 
   // summary
@@ -211,44 +153,117 @@ export async function runWizard(): Promise<BrickConfig> {
       `providers: ${Object.keys(providers).join(', ')}`,
       `models: ${selectedModelIds.join(', ')}`,
       `default_model: ${defaultModel}`,
-      `decisions: ${decisions.length}`,
-      `classifier: ${useClassifier ? 'on' : 'off'}`,
+      `skill_router models: ${skillRouter.models.length}`,
       `complexity_service: ${useComplexity ? 'on' : 'off'}`,
       `multimodal brick: ${useBrick ? 'on' : 'off'}`,
     ].join('\n'),
     'summary'
   );
 
-  const ok = await p.confirm({ message: `Write config to ${paths.config}?`, initialValue: true });
+  const ok = await p.confirm({ message: `Write config to ${pp.config}?`, initialValue: true });
   if (p.isCancel(ok) || !ok) { p.cancel('aborted'); process.exit(0); }
 
-  await saveConfig(cfg);
-  await writeEnvFile(apiKeys);
-  await writeCompose({ port: cfg.server_port });
-  p.outro(`done. config=${paths.config} compose=${paths.compose} env=${paths.env}`);
+  await saveConfig(cfg, profile);
+  await writeEnvFile(apiKeys, pp.env);
+  await writeCompose({ profile, port: cfg.server_port });
+  p.outro(`done. config=${pp.config} compose=${pp.compose} env=${pp.env}`);
   return cfg;
 }
 
-function pickDefaultModel(available: string[], preferred: string[]): string {
-  for (const p of preferred) if (available.includes(p)) return p;
-  return available[0];
+const CAPABILITIES = [
+  'coding',
+  'creative_synthesis',
+  'instruction_following',
+  'math_reasoning',
+  'planning_agentic',
+  'world_knowledge',
+];
+
+const KNOWN_SKILL_VECTORS: Record<string, number[]> = {
+  'qwen3.5-9b': [0.714788, 0.511538, 0.810109, 0.912146, 0.577072, 0.179876],
+  'deepseek-v4-flash': [0.820939, 0.657845, 0.863112, 0.934963, 0.62055, 0.488518],
+  'kimi2.6': [0.904272, 0.751595, 0.87018, 0.943892, 0.641863, 0.344074],
+};
+
+function buildSkillRouter(modelIds: string[], complexityBaseUrl?: string): any {
+  const models = modelIds.map((id, idx) => ({
+    model: id,
+    skill_vector: KNOWN_SKILL_VECTORS[id] ?? heuristicSkillVector(idx, modelIds.length),
+    use_reasoning: id === 'kimi2.6' ? true : false,
+    ...(id === 'kimi2.6' ? { reasoning_effort: 'medium' } : {}),
+    cost_weight: Number(((idx + 1) / Math.max(1, modelIds.length)).toFixed(2)),
+  }));
+
+  return {
+    enabled: true,
+    capabilities: CAPABILITIES,
+    capability_model: {
+      model_id: 'models/modernbert-capability-classifier',
+      repo_id: 'massaindustries/modernbert-capability-classifier',
+      labels: CAPABILITIES,
+      use_cpu: true,
+    },
+    complexity_model: {
+      model_id: 'regolo/brick-complexity-2-eco',
+      base_model_id: 'Qwen/Qwen3.5-0.8B',
+      ...(complexityBaseUrl ? { base_url: complexityBaseUrl } : {}),
+      timeout_seconds: 8,
+      auto_spawn: false,
+    },
+    math: {
+      prior_strength: 8,
+      tau: { easy: 0.55, medium: 0.72, hard: 0.88 },
+      over_penalty_lambda: 0.05,
+      tie_epsilon: 0.03,
+      clip_min: 0.02,
+      clip_max: 0.98,
+    },
+    models,
+    keyword_rules: [
+      {
+        name: 'force_coder',
+        mode: 'override',
+        importance: 10,
+        model: models.at(-1)?.model ?? modelIds[0],
+        operator: 'OR',
+        keywords: ['debug', 'refactor', 'compile', 'runtime', 'write a function', 'function that', 'class called'],
+        case_sensitive: false,
+      },
+      {
+        name: 'coding_bias',
+        mode: 'bias',
+        importance: 8,
+        capability: 'coding',
+        operator: 'OR',
+        keywords: ['python', 'javascript', 'typescript', 'golang', 'rust', 'java', 'sql', 'bash', 'async', 'thread'],
+        case_sensitive: false,
+      },
+    ],
+  };
 }
 
-async function readEnvKey(envKey: string): Promise<string | null> {
+function heuristicSkillVector(index: number, total: number): number[] {
+  const base = 0.62 + 0.18 * (index / Math.max(1, total - 1));
+  return [base, base, Math.min(0.9, base + 0.05), Math.min(0.92, base + 0.08), base, Math.max(0.35, base - 0.1)];
+}
+
+async function readEnvKey(envKey: string, envPath?: string): Promise<string | null> {
+  const target = envPath;
   try {
-    const txt = await readFile(paths.env, 'utf8');
-    const m = txt.match(new RegExp(`^${envKey}=(.+)$`, 'm'));
-    return m ? m[1].trim() : null;
-  } catch {
-    return process.env[envKey] ?? null;
-  }
+    if (target) {
+      const txt = await readFile(target, 'utf8');
+      const m = txt.match(new RegExp(`^${envKey}=(.+)$`, 'm'));
+      if (m) return m[1].trim();
+    }
+  } catch {}
+  return process.env[envKey] ?? null;
 }
 
-async function writeEnvFile(keys: Record<string, string>): Promise<void> {
-  await mkdir(dirname(paths.env), { recursive: true, mode: 0o700 });
+async function writeEnvFile(keys: Record<string, string>, envPath: string): Promise<void> {
+  await mkdir(dirname(envPath), { recursive: true, mode: 0o700 });
   let existing = '';
   try {
-    existing = await readFile(paths.env, 'utf8');
+    existing = await readFile(envPath, 'utf8');
   } catch {}
   const lines: string[] = [];
   const seen = new Set<string>();
@@ -260,5 +275,5 @@ async function writeEnvFile(keys: Record<string, string>): Promise<void> {
     const m = line.match(/^([A-Z_][A-Z0-9_]*)=/);
     if (m && !seen.has(m[1])) lines.push(line);
   }
-  await writeFile(paths.env, lines.filter(Boolean).join('\n') + '\n', { mode: 0o600 });
+  await writeFile(envPath, lines.filter(Boolean).join('\n') + '\n', { mode: 0o600 });
 }
